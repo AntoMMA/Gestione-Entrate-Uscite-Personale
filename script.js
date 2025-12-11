@@ -100,12 +100,13 @@ async function setPresencePing(userId){
   }
 }
 
-/* avvia ping ogni 20 secondi (mentre app aperta) */
+/* avvia ping ogni 2 secondi (mentre app aperta) */
 function startPresence(userId){
   // prima call immediata
   setPresencePing(userId);
   if(presenceIntervalHandle) clearInterval(presenceIntervalHandle);
-  presenceIntervalHandle = setInterval(()=> setPresencePing(userId), 20_000);
+  // IMPOSTATO A 2 SECONDI COME RICHIESTO
+  presenceIntervalHandle = setInterval(()=> setPresencePing(userId), 2_000); 
 }
 
 /* ferma ping */
@@ -174,13 +175,13 @@ async function openApp(){
   profileName.textContent = `${currentUser.nome} ${currentUser.cognome}`;
   profilePhone.textContent = currentUser.telefono;
 
-  // start presence ping
+  // start presence ping (ora 2 secondi)
   startPresence(currentUser.userId);
 
-  // subscribe to users list
+  // subscribe to users list (realtime)
   subscribeUsersList();
 
-  // load profile image if present
+  // load profile image if present (per persistenza)
   loadUserProfilePhoto(currentUser.userId);
 
   // load logs and totals
@@ -231,6 +232,7 @@ function subscribeUsersList(){
 
   const usersColl = collection(db, 'users');
   // listen to all users ordered by name (client-side we'll compute online)
+  // onSnapshot garantisce l'aggiornamento in tempo reale
   usersUnsub = onSnapshot(usersColl, snapshot => {
     usersList.innerHTML = '';
     snapshot.forEach(docSnap => {
@@ -305,7 +307,7 @@ function isOnline(ts){
   if(ts.toDate) last = ts.toDate();
   else last = new Date(ts);
   const diff = Date.now() - last.getTime();
-  return diff <= 60_000; // online if within 60s
+  return diff <= 60_000; // online if within 60s (Nonostante l'aggiornamento ogni 2s, una finestra di 60s è un buffer sicuro)
 }
 
 /* show profile in main-profile area */
@@ -336,6 +338,7 @@ function showProfileInMain(userDocData){
 
 /* ============================
    LOAD USER PROFILE PHOTO (for current user)
+   L'immagine viene caricata da Firestore ad ogni login, garantendo la persistenza.
    ============================ */
 async function loadUserProfilePhoto(userId){
   try {
@@ -367,13 +370,15 @@ profileFileInput?.addEventListener('change', async (ev) => {
   // simple size check (limit e.g. 4MB)
   if(f.size > 4 * 1024 * 1024) { alert('File troppo grande (max 4MB)'); return; }
 
-  const path = `user_profiles/${currentUser.userId}/${Date.now()}_${f.name}`;
+  // PATH FISSO PER L'UTENTE: garantisce che ogni nuovo upload sovrascriva il precedente
+  const path = `user_profiles/${currentUser.userId}/profile_image.jpg`; 
   const ref = storageRef(storage, path);
   try {
     const snap = await uploadBytes(ref, f);
     const url = await getDownloadURL(snap.ref);
 
     // update firestore user doc
+    // Questo salva l'URL in modo permanente sul profilo Firestore
     const uRef = doc(db, 'users', currentUser.userId);
     await updateDoc(uRef, { photoURL: url, lastSeen: serverTimestamp() });
 
