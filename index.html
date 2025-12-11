@@ -1,65 +1,148 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Entrate e Uscite</title>
-    <link rel="stylesheet" href="style.css">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Gestionale Entrate/Uscite — Green Delivery</title>
+
+  <!-- Style -->
+  <link rel="stylesheet" href="style.css">
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
 
-    <div id="login-container">
-        <h2>Accesso</h2>
-        <input id="nome" type="text" placeholder="Nome">
-        <input id="cognome" type="text" placeholder="Cognome">
-        <input id="telefono" type="text" placeholder="Telefono">
-        <button id="login-btn">Entra</button>
-    </div>
+  <!-- =========================
+       LOGIN A TUTTO SCHERMO
+       (visibile SOLO prima del login)
+  ========================== -->
+  <div id="login-screen" aria-hidden="false">
+    <div id="login-frame" class="rgb-frame">
+      <div id="login-card" class="rgb-card">
+        <h1>Accedi</h1>
 
-    <div id="app" class="hidden">
-
-        <div id="sidebar">
-            <h3>Utenti</h3>
-            <ul id="users-list"></ul>
+        <div class="profile-preview">
+          <div class="avatar-placeholder" id="avatar-preview-login"></div>
         </div>
 
-        <div id="main-content">
-            <h2 id="welcome"></h2>
+        <input id="nome" type="text" placeholder="Nome" autocomplete="given-name">
+        <input id="cognome" type="text" placeholder="Cognome" autocomplete="family-name">
+        <input id="telefono" type="tel" placeholder="Telefono" autocomplete="tel">
 
-            <div class="box entrata">
-                <h3>Entrata (€)</h3>
-                <input type="number" id="entrata-importo" placeholder="Importo">
-                <input type="text" id="entrata-motivo" placeholder="Motivo">
-                <button id="add-entrata">Aggiungi Entrata</button>
+        <button id="login-btn" class="btn-primary">Entra</button>
+
+        <p class="small muted">L'accesso memorizza localmente il profilo (puoi usare qualsiasi numero)</p>
+      </div>
+
+      <!-- RGB glitch/distort pseudo layers (visive) -->
+      <div class="rgb-distort rgb-layer"></div>
+      <div class="rgb-glow rgb-layer"></div>
+    </div>
+  </div>
+
+  <!-- =========================
+       APP (NASCOSTA FINCHÉ NON SI FA LOGIN)
+  ========================== -->
+  <div id="app" class="hidden" aria-hidden="true">
+
+    <header id="topbar">
+      <div class="brand">
+        <div class="brand-rgb"></div>
+        <h2>Green Delivery — Gestionale</h2>
+      </div>
+
+      <div class="top-actions">
+        <button id="logout-btn" class="btn-ghost">Logout</button>
+      </div>
+    </header>
+
+    <div id="container">
+      <!-- SIDEBAR: Utenti online/offline -->
+      <aside id="sidebar">
+        <h3>Utenti</h3>
+        <ul id="users-list" class="users-list"></ul>
+      </aside>
+
+      <!-- MAIN -->
+      <main id="main-content">
+
+        <section id="profile-section" class="card">
+          <h3>Il tuo profilo</h3>
+
+          <div class="profile-row">
+            <div class="avatar-large" id="avatar-display"></div>
+
+            <div class="profile-info">
+              <p id="profile-name"></p>
+              <p id="profile-phone" class="muted"></p>
+
+              <label class="btn-upload">
+                Cambia immagine profilo
+                <input id="profile-file" type="file" accept="image/*" />
+              </label>
+
+              <p class="muted small">Solo tu puoi cambiare la tua immagine.</p>
             </div>
+          </div>
+        </section>
 
-            <div class="box uscita">
-                <h3>Uscita (€)</h3>
-                <input type="number" id="uscita-importo" placeholder="Importo">
-                <input type="text" id="uscita-motivo" placeholder="Motivo">
-                <button id="add-uscita">Aggiungi Uscita</button>
+        <section class="card quick-actions">
+          <div class="box-in">
+            <h4>Aggiungi Entrata</h4>
+            <input id="entrata-importo" type="number" placeholder="Importo €">
+            <input id="entrata-motivo" type="text" placeholder="Motivo">
+            <button id="add-entrata">Aggiungi Entrata</button>
+          </div>
+
+          <div class="box-in">
+            <h4>Aggiungi Uscita</h4>
+            <input id="uscita-importo" type="number" placeholder="Importo €">
+            <input id="uscita-motivo" type="text" placeholder="Motivo">
+            <button id="add-uscita">Aggiungi Uscita</button>
+          </div>
+        </section>
+
+        <section class="card totals">
+          <h3>Totali</h3>
+          <p id="saldo-totale">Caricamento...</p>
+        </section>
+
+        <section class="card report">
+          <div class="report-header">
+            <h3>Resoconto Mensile</h3>
+            <div class="report-controls">
+              <button id="monthly-report-btn">Genera resoconto</button>
+              <button id="auto-report-toggle" class="btn-ghost">Auto: ON</button>
             </div>
+          </div>
 
-            <h3>Totali</h3>
-            <p id="saldo-totale"></p>
+          <p id="monthly-summary" class="muted"></p>
+          <canvas id="monthlyChart"></canvas>
+        </section>
 
-            <canvas id="monthlyChart"></canvas>
-
-            <h3>Log Entrate</h3>
+        <section class="card logs">
+          <div class="logs-col">
+            <h4>Log Entrate</h4>
             <ul id="log-entrate"></ul>
-
-            <h3>Log Uscite</h3>
+          </div>
+          <div class="logs-col">
+            <h4>Log Uscite</h4>
             <ul id="log-uscite"></ul>
+          </div>
+        </section>
 
-        </div>
-
+      </main>
     </div>
 
-    <!-- Chart.js globale -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <footer id="app-footer">
+      <div class="footer-rgb"></div>
+      <small>Green Delivery • Gestionale</small>
+    </footer>
 
-    <!-- Firebase modules + app logic -->
-    <script type="module" src="script.js"></script>
+  </div>
 
+  <!-- Script principale (module) -->
+  <script type="module" src="script.js"></script>
 </body>
 </html>
