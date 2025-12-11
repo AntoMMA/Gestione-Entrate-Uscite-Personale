@@ -1,223 +1,57 @@
-/* =========================
-   RESET + BASE
-========================= */
-* { box-sizing: border-box; margin: 0; padding: 0; }
-:root{
-  --bg: #0b0b0b;
-  --panel: #0f0f0f;
-  --muted: #9aa0a6;
-  --accent: #1e90ff;
-}
 body {
-  font-family: Inter, system-ui, Arial, sans-serif;
-  background: var(--bg);
-  color: #fff;
-  -webkit-font-smoothing:antialiased;
-  -moz-osx-font-smoothing:grayscale;
-  min-height: 100vh;
+    font-family: Arial;
+    margin: 0;
+    background: #111;
+    color: white;
 }
 
-/* Utility */
-.hidden { display: none !important; }
-.muted { color: var(--muted); }
-.small { font-size: 12px; }
+.hidden { display: none; }
 
-/* =========================
-   LOGIN SCREEN (FULL)
-========================= */
-#login-screen {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(180deg, rgba(0,0,0,0.8), rgba(0,0,0,0.95));
-  z-index: 9999;
+#login-container {
+    padding: 20px;
 }
 
-/* frame with layered RGB effects */
-.rgb-frame {
-  position: relative;
-  width: 420px;
-  max-width: 92vw;
-  border-radius: 16px;
-  padding: 10px;
-  display: grid;
-  place-items: center;
-  overflow: visible;
+input, button {
+    width: 100%;
+    margin: 6px 0;
+    padding: 12px;
+    border-radius: 8px;
 }
 
-/* main card */
-#login-card {
-  width: 100%;
-  background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
-  padding: 28px;
-  border-radius: 12px;
-  text-align: center;
-  position: relative;
-  z-index: 3;
-  box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+#app {
+    display: flex;
 }
 
-/* inputs & button */
-#login-card input {
-  width: 100%;
-  padding: 12px;
-  margin: 10px 0;
-  border-radius: 8px;
-  border: none;
-  background: rgba(255,255,255,0.025);
-  color: #fff;
-  outline: none;
-}
-.btn-primary {
-  background: linear-gradient(90deg,#2b9cff,#6a2bff);
-  color: white;
-  border: none;
-  padding: 12px 16px;
-  border-radius: 10px;
-  cursor: pointer;
-  font-weight: 600;
-}
-
-/* avatar preview inside login card */
-.profile-preview { display:flex; justify-content:center; margin-bottom:10px; }
-.avatar-placeholder{
-  width:72px; height:72px; border-radius:50%;
-  background: linear-gradient(120deg,#111,#222);
-  border: 3px solid rgba(255,255,255,0.04);
-  box-shadow: inset 0 -6px 14px rgba(0,0,0,0.6);
-}
-
-/* =========================
-   RGB LAYERS: glow + distort (non-rotating)
-   - breathing color shifts
-   - glitch/distort via filter + transform animations
-========================= */
-.rgb-layer { position: absolute; inset: 0; pointer-events: none; z-index:2; border-radius: 16px; }
-
-/* soft animated glow border (many colors) */
-.rgb-glow {
-  inset: -6px; margin: auto; border-radius: 18px;
-  background: conic-gradient(from 0deg, #ff0057, #ff7a00, #ffee00, #2bff00, #00d0ff, #3a00ff, #ff00d4, #ff0057);
-  filter: blur(16px) saturate(140%);
-  opacity: 0.85;
-  animation: slowShift 7s linear infinite, pulse 3.8s ease-in-out infinite;
-  mix-blend-mode: screen;
-}
-
-/* distorted thin ring */
-.rgb-distort {
-  inset: -2px;
-  border-radius: 18px;
-  background:
-    radial-gradient(120% 60% at 10% 10%, rgba(255,255,255,0.02), transparent 10%),
-    linear-gradient(90deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
-  mix-blend-mode: overlay;
-  animation: wobble 3.6s ease-in-out infinite, colorWave 5.3s linear infinite;
-  filter: contrast(1.1) saturate(1.2) hue-rotate(0deg);
-  opacity: 0.9;
-}
-
-/* breathing and color wave keyframes */
-@keyframes slowShift {
-  0% { transform: translateZ(0) scale(1); opacity: 0.7; filter: blur(12px) hue-rotate(0deg); }
-  50% { transform: translateZ(0) scale(1.02); opacity: 1; filter: blur(18px) hue-rotate(60deg); }
-  100% { transform: translateZ(0) scale(1); opacity: 0.7; filter: blur(12px) hue-rotate(120deg); }
-}
-@keyframes pulse {
-  0%{opacity:0.6} 50%{opacity:1} 100%{opacity:0.6}
-}
-@keyframes wobble{
-  0%{transform: translateX(0) skewX(0deg)}
-  25%{transform: translateX(-3px) skewX(-0.6deg)}
-  50%{transform: translateX(0) skewX(0deg)}
-  75%{transform: translateX(3px) skewX(0.6deg)}
-  100%{transform: translateX(0) skewX(0deg)}
-}
-@keyframes colorWave {
-  0%{filter: hue-rotate(0deg) saturate(1.1)}
-  33%{filter: hue-rotate(80deg) saturate(1.3)}
-  66%{filter: hue-rotate(160deg) saturate(1.2)}
-  100%{filter: hue-rotate(240deg) saturate(1.1)}
-}
-
-/* =========================
-   APP LAYOUT
-========================= */
-#topbar {
-  display:flex; justify-content:space-between; align-items:center;
-  padding:14px 22px; border-bottom:1px solid rgba(255,255,255,0.03);
-  background: linear-gradient(180deg, rgba(255,255,255,0.01), transparent);
-}
-.brand { display:flex; align-items:center; gap:12px; }
-.brand-rgb {
-  width:36px; height:36px; border-radius:8px;
-  background: conic-gradient(#ff0057,#ff7a00,#ffee00,#2bff00,#00d0ff,#3a00ff);
-  box-shadow: 0 6px 20px rgba(0,0,0,0.6);
-  animation: brandShift 6s linear infinite;
-}
-@keyframes brandShift { to { transform: rotate(360deg);} }
-
-#container { display:flex; min-height: calc(100vh - 120px); }
-
-/* sidebar users list */
 #sidebar {
-  width: 260px; background: linear-gradient(180deg, #0e0e0e, #0b0b0b);
-  padding:18px; border-right:1px solid rgba(255,255,255,0.03);
+    width: 30%;
+    background: rgba(255,255,255,0.1);
+    padding: 10px;
 }
-.users-list { list-style:none; margin-top:10px; }
-.users-list li {
-  display:flex; align-items:center; gap:10px; padding:8px; border-radius:8px;
-  margin-bottom:8px;
-  background: linear-gradient(90deg, rgba(255,255,255,0.01), transparent);
-}
-.user-avatar {
-  width:40px; height:40px; border-radius:50%; background:#111; overflow:hidden;
-  border: 2px solid rgba(255,255,255,0.03);
-}
-.user-meta { flex:1; display:flex; flex-direction:column; }
-.user-name { font-weight:600; font-size:14px; }
-.user-status { font-size:12px; color:var(--muted); display:flex; gap:8px; align-items:center; }
 
-/* online dot */
-.status-dot {
-  width:10px; height:10px; border-radius:50%; display:inline-block;
-  box-shadow: 0 0 6px rgba(0,0,0,0.6);
-}
-.status-online { background: #4FF28A; box-shadow: 0 0 8px #4FF28A; }
-.status-offline { background: #888; box-shadow: none; }
-
-/* main content */
 #main-content {
-  flex:1; padding:22px; overflow:auto;
+    width: 70%;
+    padding: 20px;
 }
-.card { background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); padding:18px; border-radius:12px; margin-bottom:16px; box-shadow: 0 8px 24px rgba(0,0,0,0.6); }
 
-/* profile */
-.profile-row { display:flex; gap:18px; align-items:center; }
-.avatar-large { width:96px; height:96px; border-radius:12px; background: linear-gradient(120deg,#111,#222); border: 3px solid rgba(255,255,255,0.03); overflow:hidden; }
-.avatar-large img { width:100%; height:100%; object-fit:cover; }
+.box {
+    padding: 20px;
+    border-radius: 10px;
+    margin-bottom: 20px;
+}
 
-/* upload button */
-.btn-upload { display:inline-block; margin-top:10px; cursor:pointer; background:rgba(255,255,255,0.02); padding:8px 10px; border-radius:8px; }
+.entrata { background: rgba(0,255,0,0.2); }
+.uscita { background: rgba(255,0,0,0.2); }
 
-/* quick actions */
-.quick-actions { display:flex; gap:12px; flex-wrap:wrap; justify-content:space-between; }
-.box-in { flex:1; min-width:250px; background: linear-gradient(180deg, rgba(255,255,255,0.01), transparent); padding:14px; border-radius:10px; }
+.green {
+    width: 10px; height: 10px;
+    background: lime;
+    border-radius: 50%;
+    display: inline-block;
+}
 
-/* logs */
-.logs-col { width:49%; display:inline-block; vertical-align:top; }
-#log-entrate li, #log-uscite li { padding:8px 6px; border-bottom:1px dashed rgba(255,255,255,0.02); list-style:none; font-size:14px; }
-
-/* footer rgb */
-#app-footer { height:56px; display:flex; align-items:center; justify-content:center; gap:8px; border-top:1px solid rgba(255,255,255,0.03); padding:8px; }
-.footer-rgb { width:120px; height:8px; border-radius:8px; background: linear-gradient(90deg,#ff0057,#ff7a00,#ffee00,#2bff00,#00d0ff,#3a00ff); filter: blur(6px); opacity:0.85; }
-
-/* responsive */
-@media (max-width:900px){
-  #container { flex-direction: column; }
-  #sidebar { width:100%; }
-  .logs-col { width:100%; }
-  .quick-actions { flex-direction:column; }
+.red {
+    width: 10px; height: 10px;
+    background: red;
+    border-radius: 50%;
+    display: inline-block;
 }
