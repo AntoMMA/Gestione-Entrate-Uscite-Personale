@@ -1,5 +1,5 @@
 /* =========================
-   RESET + BASE
+    RESET + BASE
 ========================= */
 * { box-sizing: border-box; margin: 0; padding: 0; }
 :root{
@@ -7,6 +7,7 @@
   --panel: #0f0f0f;
   --muted: #9aa0a6;
   --accent: #1e90ff;
+  --rgb-glow-color: conic-gradient(from 0deg, #ff0057, #ff7a00, #ffee00, #2bff00, #00d0ff, #3a00ff, #ff00d4, #ff0057);
 }
 body {
   font-family: Inter, system-ui, Arial, sans-serif;
@@ -22,8 +23,55 @@ body {
 .muted { color: var(--muted); }
 .small { font-size: 12px; }
 
+/* Bottoni */
+.btn-primary {
+  background: linear-gradient(90deg,#2b9cff,#6a2bff);
+  color: white;
+  border: none;
+  padding: 12px 16px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: transform 0.1s, box-shadow 0.1s;
+}
+.btn-primary:hover {
+  box-shadow: 0 0 12px rgba(43, 156, 255, 0.5);
+}
+.btn-primary:active {
+  transform: scale(0.98);
+}
+.btn-ghost {
+  background: none;
+  border: 1px solid rgba(255,255,255,0.1);
+  color: var(--muted);
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s;
+}
+.btn-ghost:hover {
+  color: #fff;
+  border-color: rgba(255,255,255,0.2);
+}
+
+/* Input */
+input[type="text"], input[type="number"], input[type="tel"] {
+  width: 100%;
+  padding: 12px;
+  margin: 10px 0;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.05);
+  background: rgba(255,255,255,0.025);
+  color: #fff;
+  outline: none;
+  transition: border-color 0.2s;
+}
+input:focus {
+  border-color: var(--accent);
+}
+
 /* =========================
-   LOGIN SCREEN (FULL)
+    LOGIN SCREEN (FULL)
 ========================= */
 #login-screen {
   position: fixed;
@@ -59,27 +107,6 @@ body {
   box-shadow: 0 12px 40px rgba(0,0,0,0.6);
 }
 
-/* inputs & button */
-#login-card input {
-  width: 100%;
-  padding: 12px;
-  margin: 10px 0;
-  border-radius: 8px;
-  border: none;
-  background: rgba(255,255,255,0.025);
-  color: #fff;
-  outline: none;
-}
-.btn-primary {
-  background: linear-gradient(90deg,#2b9cff,#6a2bff);
-  color: white;
-  border: none;
-  padding: 12px 16px;
-  border-radius: 10px;
-  cursor: pointer;
-  font-weight: 600;
-}
-
 /* avatar preview inside login card */
 .profile-preview { display:flex; justify-content:center; margin-bottom:10px; }
 .avatar-placeholder{
@@ -90,18 +117,20 @@ body {
 }
 
 /* =========================
-   RGB LAYERS: glow + distort (non-rotating)
-   - breathing color shifts
-   - glitch/distort via filter + transform animations
+    RGB LAYERS: glow + distort
+    - Corsair style glow (conic gradient animated)
+    - Glitch/distort effect ridotto
 ========================= */
 .rgb-layer { position: absolute; inset: 0; pointer-events: none; z-index:2; border-radius: 16px; }
 
-/* soft animated glow border (many colors) */
+/* soft animated glow border (Corsair Style) */
 .rgb-glow {
-  inset: -6px; margin: auto; border-radius: 18px;
-  background: conic-gradient(from 0deg, #ff0057, #ff7a00, #ffee00, #2bff00, #00d0ff, #3a00ff, #ff00d4, #ff0057);
+  inset: -8px; /* Aumentato lo spessore */
+  margin: auto; border-radius: 18px;
+  background: var(--rgb-glow-color);
   filter: blur(16px) saturate(140%);
   opacity: 0.85;
+  /* Animazione: rotazione lenta e pulsazione */
   animation: slowShift 7s linear infinite, pulse 3.8s ease-in-out infinite;
   mix-blend-mode: screen;
 }
@@ -110,40 +139,36 @@ body {
 .rgb-distort {
   inset: -2px;
   border-radius: 18px;
-  background:
-    radial-gradient(120% 60% at 10% 10%, rgba(255,255,255,0.02), transparent 10%),
-    linear-gradient(90deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+  /* Rimosso colore per lasciare solo il pattern, riducendo l'impatto visivo */
+  background: radial-gradient(120% 60% at 10% 10%, rgba(255,255,255,0.02), transparent 10%);
   mix-blend-mode: overlay;
-  animation: wobble 3.6s ease-in-out infinite, colorWave 5.3s linear infinite;
-  filter: contrast(1.1) saturate(1.2) hue-rotate(0deg);
-  opacity: 0.9;
+  /* Animazione: wobble ridotto e senza color wave */
+  animation: wobble 3.6s ease-in-out infinite;
+  filter: contrast(1.1) saturate(1.2);
+  opacity: 0.4; /* Ridotta l'opacità */
 }
 
-/* breathing and color wave keyframes */
+/* keyframes */
 @keyframes slowShift {
-  0% { transform: translateZ(0) scale(1); opacity: 0.7; filter: blur(12px) hue-rotate(0deg); }
-  50% { transform: translateZ(0) scale(1.02); opacity: 1; filter: blur(18px) hue-rotate(60deg); }
-  100% { transform: translateZ(0) scale(1); opacity: 0.7; filter: blur(12px) hue-rotate(120deg); }
+  /* Modificata l'animazione per una rotazione continua (stile Corsair) */
+  0% { transform: translateZ(0) rotate(0deg); filter: blur(12px) saturate(140%); }
+  100% { transform: translateZ(0) rotate(360deg); filter: blur(12px) saturate(140%); }
 }
 @keyframes pulse {
   0%{opacity:0.6} 50%{opacity:1} 100%{opacity:0.6}
 }
 @keyframes wobble{
+  /* Wobble leggero per un effetto di distorsione minimo */
   0%{transform: translateX(0) skewX(0deg)}
-  25%{transform: translateX(-3px) skewX(-0.6deg)}
+  25%{transform: translateX(-1px) skewX(-0.3deg)}
   50%{transform: translateX(0) skewX(0deg)}
-  75%{transform: translateX(3px) skewX(0.6deg)}
+  75%{transform: translateX(1px) skewX(0.3deg)}
   100%{transform: translateX(0) skewX(0deg)}
 }
-@keyframes colorWave {
-  0%{filter: hue-rotate(0deg) saturate(1.1)}
-  33%{filter: hue-rotate(80deg) saturate(1.3)}
-  66%{filter: hue-rotate(160deg) saturate(1.2)}
-  100%{filter: hue-rotate(240deg) saturate(1.1)}
-}
+
 
 /* =========================
-   APP LAYOUT
+    APP LAYOUT
 ========================= */
 #topbar {
   display:flex; justify-content:space-between; align-items:center;
@@ -151,13 +176,6 @@ body {
   background: linear-gradient(180deg, rgba(255,255,255,0.01), transparent);
 }
 .brand { display:flex; align-items:center; gap:12px; }
-.brand-rgb {
-  width:36px; height:36px; border-radius:8px;
-  background: conic-gradient(#ff0057,#ff7a00,#ffee00,#2bff00,#00d0ff,#3a00ff);
-  box-shadow: 0 6px 20px rgba(0,0,0,0.6);
-  animation: brandShift 6s linear infinite;
-}
-@keyframes brandShift { to { transform: rotate(360deg);} }
 
 #container { display:flex; min-height: calc(100vh - 120px); }
 
@@ -171,6 +189,10 @@ body {
   display:flex; align-items:center; gap:10px; padding:8px; border-radius:8px;
   margin-bottom:8px;
   background: linear-gradient(90deg, rgba(255,255,255,0.01), transparent);
+  transition: background 0.2s;
+}
+.users-list li:hover {
+  background: rgba(255,255,255,0.03);
 }
 .user-avatar {
   width:40px; height:40px; border-radius:50%; background:#111; overflow:hidden;
@@ -200,24 +222,40 @@ body {
 .avatar-large img { width:100%; height:100%; object-fit:cover; }
 
 /* upload button */
-.btn-upload { display:inline-block; margin-top:10px; cursor:pointer; background:rgba(255,255,255,0.02); padding:8px 10px; border-radius:8px; }
+.btn-upload {
+  display:inline-block; margin-top:10px; cursor:pointer;
+  background:rgba(255,255,255,0.02); padding:8px 10px; border-radius:8px;
+  transition: background 0.2s;
+}
+.btn-upload:hover { background:rgba(255,255,255,0.05); }
 
 /* quick actions */
 .quick-actions { display:flex; gap:12px; flex-wrap:wrap; justify-content:space-between; }
-.box-in { flex:1; min-width:250px; background: linear-gradient(180deg, rgba(255,255,255,0.01), transparent); padding:14px; border-radius:10px; }
+.box-in {
+  flex:1; min-width:250px; background: linear-gradient(180deg, rgba(255,255,255,0.01), transparent);
+  padding:14px; border-radius:10px;
+}
+.box-in button { width:100%; margin-top:10px; } /* Aggiunge larghezza 100% ai bottoni Entrata/Uscita */
 
 /* logs */
-.logs-col { width:49%; display:inline-block; vertical-align:top; }
+.logs { display:flex; gap:20px; }
+.logs-col { flex:1; }
 #log-entrate li, #log-uscite li { padding:8px 6px; border-bottom:1px dashed rgba(255,255,255,0.02); list-style:none; font-size:14px; }
 
 /* footer rgb */
 #app-footer { height:56px; display:flex; align-items:center; justify-content:center; gap:8px; border-top:1px solid rgba(255,255,255,0.03); padding:8px; }
-.footer-rgb { width:120px; height:8px; border-radius:8px; background: linear-gradient(90deg,#ff0057,#ff7a00,#ffee00,#2bff00,#00d0ff,#3a00ff); filter: blur(6px); opacity:0.85; }
+.footer-rgb {
+  width:120px; height:8px; border-radius:8px;
+  background: var(--rgb-glow-color);
+  filter: blur(6px); opacity:0.85;
+  animation: slowShift 4s linear infinite; /* Applico la rotazione anche al footer */
+}
 
 /* responsive */
 @media (max-width:900px){
   #container { flex-direction: column; }
   #sidebar { width:100%; }
+  .logs { flex-direction: column; }
   .logs-col { width:100%; }
   .quick-actions { flex-direction:column; }
 }
