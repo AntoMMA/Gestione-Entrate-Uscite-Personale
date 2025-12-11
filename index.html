@@ -1,28 +1,77 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gestione Entrate/Uscite Personale</title>
-
-    <!-- Collegamento al file CSS -->
-    <link rel="stylesheet" href="style.css">
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Entrate e Uscite</title>
+<link rel="stylesheet" href="style.css" />
 </head>
 <body>
+<div class="container">
+  <!-- LOGIN / REGISTRAZIONE -->
+  <div class="card" id="loginCard">
+    <h2>Login / Registrazione</h2>
+    <input type="text" id="nome" placeholder="Nome">
+    <input type="text" id="cognome" placeholder="Cognome">
+    <input type="text" id="telefono" placeholder="Telefono">
+    <button id="btnLogin">Entra / Registrati</button>
+    <div id="loginMsg"></div>
+  </div>
 
-    <div class="container">
-        <h1>Gestione Entrate/Uscite</h1>
-
-        <div class="buttons">
-            <button id="btnEntrata" class="btn green">Entrata</button>
-            <button id="btnUscita" class="btn red">Uscita</button>
-        </div>
-
-        <h2>Utenti in servizio</h2>
-        <ul id="listaServizio" class="lista"></ul>
+  <!-- DASHBOARD -->
+  <div id="dashboard" style="display:none;">
+    <div class="animated-rgb user-presence" id="userPresence">
+      <h3>Utenti Online</h3>
+      <div id="usersList"></div>
     </div>
 
-    <!-- Script in modalità modulo -->
-    <script type="module" src="script.js"></script>
+    <div class="topbar animated-rgb">
+      <div id="greeting"></div>
+      <button id="btnLogout">Logout</button>
+    </div>
+
+    <div class="card">
+      <h3 style="color:var(--green)">Entrata (€)</h3>
+      <input type="number" id="entryAmount" placeholder="Importo">
+      <input type="text" id="entryReason" placeholder="Motivo">
+      <button class="entry-btn" id="btnAddEntry">Aggiungi Entrata</button>
+    </div>
+
+    <div class="card">
+      <h3 style="color:var(--red)">Uscita (€)</h3>
+      <input type="number" id="exitAmount" placeholder="Importo">
+      <input type="text" id="exitReason" placeholder="Motivo">
+      <button class="exit-btn" id="btnAddExit">Aggiungi Uscita</button>
+    </div>
+
+    <div class="card">
+      <h3>Totale</h3>
+      <div id="totals">Entrate: €0 | Uscite: €0 | Saldo: €0</div>
+      <button id="btnSaveCalc">Salva Calcolo Totale</button>
+    </div>
+
+    <div class="card">
+      <h3>Log Entrate</h3>
+      <div id="entryLog"></div>
+      <h3>Log Uscite</h3>
+      <div id="exitLog"></div>
+      <h3>Storico Calcoli</h3>
+      <div id="calcLog"></div>
+    </div>
+
+    <!-- GRAFICO MENSILE -->
+    <div class="card">
+      <h3>Spese Mensili</h3>
+      <canvas id="monthlyChart"></canvas>
+      <div id="monthlyComparison" style="text-align:center;margin-top:6px;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Chart.js (globally available) -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<!-- script.js in modalità module (usa Firebase modulare) -->
+<script type="module" src="script.js"></script>
 </body>
 </html>
