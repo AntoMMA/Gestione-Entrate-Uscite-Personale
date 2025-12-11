@@ -9,8 +9,7 @@ import {
   query, where, orderBy, serverTimestamp, onSnapshot, Timestamp
 } from "https://www.gstatic.com/firebasejs/10.5.2/firebase-firestore.js";
 
-// Rimosso: import Firebase Storage
-// Rimosso: getStorage, ref as storageRef, uploadBytes, getDownloadURL
+// Rimossa l'importazione di Firebase Storage per passare a Cloudinary
 
 /* ============================
    FIREBASE CONFIG — usa la tua config (già presente)
@@ -26,15 +25,15 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
-// Rimosso: const storage = getStorage(app);
-
+// const storage = getStorage(app); // Rimosso l'inizializzazione di Firebase Storage
 
 /* ============================
    CLOUDIDARY CONFIG
-   *** VALORI INSERITI DALL'UTENTE ***
    ============================ */
 const CLOUDINARY_CLOUD_NAME = "dzgynfn7t"; 
-const CLOUDINARY_UPLOAD_PRESET = "gestionale_personale"; 
+const CLOUDINARY_UPLOAD_PRESET = "gestionale_personale"; // Presuppone il preset Unsigned
+const CLOUDINARY_API_KEY = "144428837591683"; 
+const CLOUDINARY_API_SECRET = "FOGy91qWzpp2Iyj5YT1q1AQUJ9o"; 
 const CLOUDINARY_URL = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`;
 
 
@@ -57,6 +56,7 @@ const profileName = document.getElementById('profile-name');
 const profilePhone = document.getElementById('profile-phone');
 const avatarDisplay = document.getElementById('avatar-display');
 const profileFileInput = document.getElementById('profile-file');
+const removeProfileBtn = document.getElementById('remove-profile-btn'); // Aggiunto riferimento DOM
 
 const entrataImporto = document.getElementById('entrata-importo');
 const entrataMotivo = document.getElementById('entrata-motivo');
@@ -94,7 +94,7 @@ function makeUserId(nome, cognome, telefono){
 }
 
 /* ============================
-   PRESENCE: aggiorna lastSeen su users/{userId} (a 2s come richiesto)
+   PRESENCE: aggiorna lastSeen su users/{userId}
    ============================ */
 async function setPresencePing(userId){
   if(!userId) return;
@@ -109,13 +109,12 @@ async function setPresencePing(userId){
   }
 }
 
-/* avvia ping ogni 2 secondi (mentre app aperta) */
+/* avvia ping ogni 20 secondi (mentre app aperta) */
 function startPresence(userId){
   // prima call immediata
   setPresencePing(userId);
   if(presenceIntervalHandle) clearInterval(presenceIntervalHandle);
-  // IMPOSTATO A 2 SECONDI COME RICHIESTO
-  presenceIntervalHandle = setInterval(()=> setPresencePing(userId), 2_000); 
+  presenceIntervalHandle = setInterval(()=> setPresencePing(userId), 20_000);
 }
 
 /* ferma ping */
@@ -136,7 +135,7 @@ loginBtn.addEventListener('click', async () => {
   const userId = makeUserId(nome,cognome,telefono);
   currentUser = { nome, cognome, telefono, userId };
 
-  // salva locale (usando una chiave generica)
+  // salva locale
   localStorage.setItem('gd_user', JSON.stringify(currentUser));
 
   // crea/aggiorna doc utente in firestore con campi base
@@ -184,13 +183,13 @@ async function openApp(){
   profileName.textContent = `${currentUser.nome} ${currentUser.cognome}`;
   profilePhone.textContent = currentUser.telefono;
 
-  // start presence ping (ora 2 secondi)
+  // start presence ping
   startPresence(currentUser.userId);
 
-  // subscribe to users list (realtime)
+  // subscribe to users list
   subscribeUsersList();
 
-  // load profile image if present (per persistenza)
+  // load profile image if present
   loadUserProfilePhoto(currentUser.userId);
 
   // load logs and totals
@@ -241,7 +240,6 @@ function subscribeUsersList(){
 
   const usersColl = collection(db, 'users');
   // listen to all users ordered by name (client-side we'll compute online)
-  // onSnapshot garantisce l'aggiornamento in tempo reale
   usersUnsub = onSnapshot(usersColl, snapshot => {
     usersList.innerHTML = '';
     snapshot.forEach(docSnap => {
@@ -278,7 +276,7 @@ function subscribeUsersList(){
       const statusEl = document.createElement('div');
       statusEl.className = 'user-status';
 
-      // online: if lastSeen within 60 seconds
+      // online: if lastSeen within 15 seconds
       let statusDot = document.createElement('span');
       statusDot.className = 'status-dot ' + (isOnline(d.lastSeen) ? 'status-online' : 'status-offline');
 
@@ -316,7 +314,7 @@ function isOnline(ts){
   if(ts.toDate) last = ts.toDate();
   else last = new Date(ts);
   const diff = Date.now() - last.getTime();
-  return diff <= 60_000; // online if within 60s (Nonostante l'aggiornamento ogni 2s, una finestra di 60s è un buffer sicuro)
+  return diff <= 15_000; // online if within 15s
 }
 
 /* show profile in main-profile area */
@@ -332,22 +330,26 @@ function showProfileInMain(userDocData){
     avatarDisplay.innerHTML = `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:32px;">${(userDocData.nome||'')[0]||'?'}</div>`;
   }
 
-  // Se l'utente visualizzato NON è l'utente corrente, disabilita l'input file
-  const isCurrentUserProfile = currentUser && userDocData.userId === currentUser.userId;
+  const isCurrentUser = currentUser && userDocData.userId === currentUser.userId;
   const uploadButtonLabel = profileFileInput.closest('label');
-
-  if(!isCurrentUserProfile){
+  
+  // Gestione visibilità/disponibilità input file e pulsante rimozione
+  if(!isCurrentUser){
     profileFileInput.disabled = true;
-    if(uploadButtonLabel) uploadButtonLabel.style.display = 'none'; // Nascondi il pulsante
+    profileFileInput.style.opacity = 0.5;
+    if(uploadButtonLabel) uploadButtonLabel.style.display = 'none';
+    if(removeProfileBtn) removeProfileBtn.style.display = 'none';
   } else {
     profileFileInput.disabled = false;
-    if(uploadButtonLabel) uploadButtonLabel.style.display = 'inline-block'; // Mostra il pulsante
+    profileFileInput.style.opacity = 1;
+    if(uploadButtonLabel) uploadButtonLabel.style.display = 'inline-block';
+    // Mostra Rimuovi solo se c'è un'immagine
+    if(removeProfileBtn) removeProfileBtn.style.display = userDocData.photoURL ? 'inline-block' : 'none';
   }
 }
 
 /* ============================
    LOAD USER PROFILE PHOTO (for current user)
-   L'immagine viene caricata da Firestore ad ogni login, garantendo la persistenza.
    ============================ */
 async function loadUserProfilePhoto(userId){
   try {
@@ -356,13 +358,14 @@ async function loadUserProfilePhoto(userId){
     if(uSnap.exists()){
       const d = uSnap.data();
       if(d.photoURL){
-        // Cloudinary URL (o il vecchio Firebase Storage URL)
-        avatarDisplay.innerHTML = `<img src="${d.photoURL}" alt="avatar">`; 
+        avatarDisplay.innerHTML = `<img src="${d.photoURL}" alt="avatar">`;
         avatarPreviewLogin.style.backgroundImage = `url(${d.photoURL})`;
         avatarPreviewLogin.style.backgroundSize = 'cover';
+        if(removeProfileBtn) removeProfileBtn.style.display = 'inline-block';
       } else {
         avatarDisplay.innerHTML = '';
         avatarPreviewLogin.style.backgroundImage = 'none';
+        if(removeProfileBtn) removeProfileBtn.style.display = 'none';
       }
     }
   } catch(err){
@@ -371,27 +374,24 @@ async function loadUserProfilePhoto(userId){
 }
 
 /* ============================
-   UPLOAD PROFILE IMAGE (USANDO CLOUDINARY)
+   UPLOAD PROFILE IMAGE (USANDO CLOUDINARY - UNSIGNED)
    ============================ */
 profileFileInput?.addEventListener('change', async (ev) => {
-  if(!currentUser || profileFileInput.disabled) return alert('Operazione non permessa.');
+  if(!currentUser) return alert('Effettua login prima.');
   const f = ev.target.files[0];
   if(!f) return;
   
   if(f.size > 4 * 1024 * 1024) { alert('File troppo grande (max 4MB)'); return; }
-
-  // Non serve controllare i placeholder, sono stati inseriti i valori
   
   try {
     // 1. Prepara i dati per Cloudinary
     const formData = new FormData();
     formData.append('file', f);
     formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
-    // Specifica la cartella e il Public ID (usiamo l'userId per sovrascrivere l'immagine precedente)
     formData.append('folder', 'gestionale_users');
-    formData.append('public_id', currentUser.userId); 
+    formData.append('public_id', currentUser.userId); // Sovrascrive automaticamente l'immagine precedente
 
-    // 2. Upload su Cloudinary
+    // 2. Upload su Cloudinary (Unsigned upload)
     const response = await fetch(CLOUDINARY_URL, {
       method: 'POST',
       body: formData
@@ -400,29 +400,49 @@ profileFileInput?.addEventListener('change', async (ev) => {
     if(!response.ok){
       const errData = await response.json();
       console.error('Cloudinary Upload Error:', errData);
-      throw new Error(`Upload fallito: ${errData.error?.message || response.statusText}`);
+      throw new Error(`Upload fallito: ${errData.error?.message || response.statusText}. Controlla che il preset sia 'Unsigned'.`);
     }
 
     const data = await response.json();
     const url = data.secure_url;
 
     // 3. Update firestore user doc
-    // Questo salva l'URL in modo permanente sul profilo Firestore
     const uRef = doc(db, 'users', currentUser.userId);
     await updateDoc(uRef, { photoURL: url, lastSeen: serverTimestamp() });
 
     // 4. Update UI
-    avatarDisplay.innerHTML = `<img src="${url}" alt="avatar">`;
-    avatarPreviewLogin.style.backgroundImage = `url(${url})`;
-    avatarPreviewLogin.style.backgroundSize = 'cover';
+    loadUserProfilePhoto(currentUser.userId);
     alert('Immagine profilo aggiornata!');
   } catch(err){
     console.error('upload error', err);
     alert(`Errore durante l'upload. Controlla la console. Dettaglio: ${err.message}`);
   } finally {
-    // Reset input file per permettere un nuovo upload dello stesso file
-    ev.target.value = '';
+    ev.target.value = ''; // Reset input file
   }
+});
+
+
+/* ============================
+   RIMUOVI IMMAGINE PROFILO (Solo rimozione da Firestore per sicurezza)
+   ============================ */
+removeProfileBtn?.addEventListener('click', async () => {
+    if(!currentUser) return;
+    if(!confirm("Sei sicuro di voler rimuovere la tua immagine profilo?")) return;
+
+    try {
+        // Rimuovere l'URL da Firestore (La cancellazione fisica da Cloudinary richiede l'API Secret,
+        // che non è sicuro da usare lato client per la cancellazione diretta).
+        const uRef = doc(db, 'users', currentUser.userId);
+        await updateDoc(uRef, { photoURL: null, lastSeen: serverTimestamp() });
+
+        // Aggiorna UI
+        loadUserProfilePhoto(currentUser.userId);
+        alert('Immagine profilo rimossa. Nota: Il file originale su Cloudinary è stato dereferenziato ma non cancellato per motivi di sicurezza lato client.');
+
+    } catch(err) {
+        console.error('Errore nella rimozione:', err);
+        alert('Errore durante la rimozione dell\'immagine.');
+    }
 });
 
 /* ============================
@@ -472,7 +492,7 @@ async function addSimpleDoc(collectionName, data){
 }
 
 /* ============================
-   LOAD LOGS + TOTALS (Richiede Indici Firestore)
+   LOAD LOGS + TOTALS
    ============================ */
 async function loadLogs(){
   if(!currentUser) return;
@@ -482,7 +502,6 @@ async function loadLogs(){
 
   // entries
   try {
-    // Query per entrate: richiede indice composito (userId ASC, createdAt DESC)
     const qE = query(collection(db, 'entries'), where('userId','==',currentUser.userId), orderBy('createdAt','desc'));
     const snapE = await getDocs(qE);
     let totE = 0;
@@ -494,7 +513,6 @@ async function loadLogs(){
       logEntrate.appendChild(li);
     });
 
-    // Query per uscite: richiede indice composito (userId ASC, createdAt DESC)
     const qU = query(collection(db, 'exits'), where('userId','==',currentUser.userId), orderBy('createdAt','desc'));
     const snapU = await getDocs(qU);
     let totU = 0;
@@ -509,9 +527,6 @@ async function loadLogs(){
     saldoTotale.textContent = `Entrate: €${totE.toFixed(2)} — Uscite: €${totU.toFixed(2)} — Saldo: €${(totE - totU).toFixed(2)}`;
   } catch(err){
     console.error('loadLogs', err);
-    if(err.code === 'failed-precondition' && err.message.includes('requires an index')){
-        saldoTotale.textContent = 'ERRORE: La query richiede un indice in Firebase. Controlla la console per il link.';
-    }
   }
 }
 
@@ -525,7 +540,6 @@ async function getTotalForRange(collectionName, userId, startDate, endDate){
     where('createdAt','>=', Timestamp.fromDate(startDate)),
     where('createdAt','<', Timestamp.fromDate(endDate))
   );
-  // Anche qui, potrebbe servire un indice composito: userId (ASC), createdAt (ASC)
   const snap = await getDocs(q);
   let total = 0;
   snap.forEach(d => total += Number(d.data().importo || 0));
@@ -618,11 +632,7 @@ function showProfileInMainInitial(){
       const uRef = doc(db, 'users', currentUser.userId);
       const snap = await getDoc(uRef);
       if(snap.exists()){
-        // Mostra il profilo, assicurandoti che l'upload button sia visibile
-        const data = snap.data();
-        showProfileInMain(data);
-        const uploadButtonLabel = profileFileInput.closest('label');
-        if(uploadButtonLabel) uploadButtonLabel.style.display = 'inline-block';
+        showProfileInMain(snap.data());
       } else {
         // fallback UI
         profileName.textContent = `${currentUser.nome} ${currentUser.cognome}`;
@@ -656,7 +666,7 @@ setTimeout(()=> {
    ============================ */
 setInterval(()=> {
   if(currentUser) loadLogs();
-}, 45_000);
+}, 20_000);
 
 /* ============================
    END OF FILE
