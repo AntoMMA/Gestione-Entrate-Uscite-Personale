@@ -1,21 +1,25 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <title>Entrate e Uscite</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
-    <div id="login-container">
-        <h2>Accesso</h2>
-        <input id="nome" type="text" placeholder="Nome">
-        <input id="cognome" type="text" placeholder="Cognome">
-        <input id="telefono" type="text" placeholder="Telefono">
-        <button id="login-btn">Entra</button>
+    <!-- LOGIN (schermata iniziale singola) -->
+    <div id="login-screen">
+        <div id="login-container" class="rgb-border">
+            <h2>Accesso</h2>
+            <input id="nome" type="text" placeholder="Nome" autocomplete="given-name" />
+            <input id="cognome" type="text" placeholder="Cognome" autocomplete="family-name" />
+            <input id="telefono" type="text" placeholder="Telefono" autocomplete="tel" />
+            <button id="login-btn">Entra</button>
+        </div>
     </div>
 
+    <!-- APP (nascosta fino al login) -->
     <div id="app" class="hidden">
 
         <div id="sidebar">
@@ -43,7 +47,12 @@
             <h3>Totali</h3>
             <p id="saldo-totale"></p>
 
-            <canvas id="monthlyChart"></canvas>
+            <div class="report-controls">
+                <button id="monthly-report-btn">Genera resoconto mensile</button>
+                <div id="monthly-summary" aria-live="polite"></div>
+            </div>
+
+            <canvas id="monthlyChart" width="600" height="300"></canvas>
 
             <h3>Log Entrate</h3>
             <ul id="log-entrate"></ul>
@@ -54,10 +63,11 @@
         </div>
 
     </div>
-    
 
-    <!-- Firebase modules + app logic -->
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- Firebase modules + app logic (script.js a module) -->
     <script type="module" src="script.js"></script>
-
 </body>
 </html>
