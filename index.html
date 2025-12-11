@@ -94,13 +94,13 @@ canvas{background:var(--card);border-radius:12px;padding:12px;margin-top:12px;}
   </div>
 </div>
 
-<!-- FIREBASE + CHART.JS -->
-<script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.6.0/firebase-app.js";
-import { getFirestore, collection, query, where, getDocs, addDoc, orderBy, onSnapshot, serverTimestamp, doc, setDoc } from "https://www.gstatic.com/firebasejs/10.6.0/firebase-firestore.js";
-import { Chart } from "https://cdn.jsdelivr.net/npm/chart.js";
-
-const firebaseConfig = {
+<!-- FIREBASE + CHART.JS VERSIONE MOBILE FRIENDLY -->
+<script src="https://www.gstatic.com/firebasejs/10.6.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.6.0/firebase-firestore.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  // CONFIG FIREBASE
+  const firebaseConfig = {
   apiKey: "AIzaSyDA8x2UcwoDBNbEZbsE5nGUNlLHI-aXUHA",
   authDomain: "gestionale-entrate-uscite-wr.firebaseapp.com",
   projectId: "gestionale-entrate-uscite-wr",
@@ -109,224 +109,185 @@ const firebaseConfig = {
   appId: "1:180959843310:web:0800ebae9267f61071b4ff",
   measurementId: "G-XFL9ZH8K6T"
 };
+  const app = firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
 
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
+  let currentUser=null;
+  let monthlyChart=null;
 
-let currentUser=null;
-let monthlyChart=null;
+  // LOGIN / REGISTRAZIONE
+  document.getElementById('btnLogin').onclick = async ()=>{
+    const nome=document.getElementById('nome').value.trim();
+    const cognome=document.getElementById('cognome').value.trim();
+    const telefono=document.getElementById('telefono').value.trim();
+    if(!telefono){document.getElementById('loginMsg').innerText="Inserisci il telefono"; return;}
 
-// LOGIN / REGISTRAZIONE
-document.getElementById('btnLogin').onclick = async ()=>{
-  const nome=document.getElementById('nome').value.trim();
-  const cognome=document.getElementById('cognome').value.trim();
-  const telefono=document.getElementById('telefono').value.trim();
-  if(!nome||!cognome||!telefono){document.getElementById('loginMsg').innerText="Compila tutti i campi"; return;}
-  
-  const usersCol=collection(db,"users");
-  const q=query(usersCol, where("nome","==",nome),where("cognome","==",cognome),where("telefono","==",telefono));
-  const snap=await getDocs(q);
-  if(snap.empty){
-    const docRef = await addDoc(usersCol,{nome,cognome,telefono,createdAt:serverTimestamp()});
-    currentUser={id:docRef.id,nome,cognome,telefono};
-  }else{
-    const d=snap.docs[0].data();
-    currentUser={id:snap.docs[0].id,nome:d.nome,cognome:d.cognome,telefono:d.telefono};
+    const usersCol = db.collection("users");
+    const snap = await usersCol.where("telefono","==",telefono).get();
+
+    if(snap.empty){
+      // registrazione
+      const docRef = await usersCol.add({nome,cognome,telefono,createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+      currentUser={id:docRef.id,nome,cognome,telefono};
+    } else {
+      const d = snap.docs[0].data();
+      currentUser={id:snap.docs[0].id,nome:d.nome,cognome:d.cognome,telefono:d.telefono};
+    }
+
+    document.getElementById('loginCard').style.display='none';
+    document.getElementById('dashboard').style.display='block';
+    document.getElementById('greeting').innerText=`Ciao ${currentUser.nome} ${currentUser.cognome}`;
+    setOnline(true);
+    listenData();
+    listenUsersPresence();
+    updateMonthlyChart();
+  };
+
+  // LOGOUT
+  function logout(){
+    setOnline(false);
+    currentUser=null;
+    document.getElementById('dashboard').style.display='none';
+    document.getElementById('loginCard').style.display='block';
   }
-  document.getElementById('loginCard').style.display='none';
-  document.getElementById('dashboard').style.display='block';
-  document.getElementById('greeting').innerText=`Ciao ${currentUser.nome} ${currentUser.cognome}`;
-  setOnline(true);
-  listenData();
-  listenUsersPresence();
-  updateMonthlyChart();
-};
 
-// LOGOUT
-function logout(){
-  setOnline(false);
-  currentUser=null;
-  document.getElementById('dashboard').style.display='none';
-  document.getElementById('loginCard').style.display='block';
-}
+  // ENTRATE / USCITE
+  async function addEntry(){
+    const amt=Number(document.getElementById('entryAmount').value);
+    const reason=document.getElementById('entryReason').value;
+    if(!amt){alert("Importo non valido"); return;}
+    await db.collection("entries").add({userId:currentUser.id,amount:amt,reason,createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+    document.getElementById('entryAmount').value=''; document.getElementById('entryReason').value='';
+    updateOnlineSaldo(); updateMonthlyChart();
+  }
+  async function addExit(){
+    const amt=Number(document.getElementById('exitAmount').value);
+    const reason=document.getElementById('exitReason').value;
+    if(!amt){alert("Importo non valido"); return;}
+    await db.collection("exits").add({userId:currentUser.id,amount:amt,reason,createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+    document.getElementById('exitAmount').value=''; document.getElementById('exitReason').value='';
+    updateOnlineSaldo(); updateMonthlyChart();
+  }
 
-// AGGIUNTA ENTRATA
-async function addEntry(){
-  const amt=document.getElementById('entryAmount').value;
-  const reason=document.getElementById('entryReason').value;
-  if(!amt||isNaN(amt)) return alert("Importo non valido");
-  await addDoc(collection(db,"entries"),{userId:currentUser.id,amount:Number(amt),reason,createdAt:serverTimestamp()});
-  document.getElementById('entryAmount').value=''; document.getElementById('entryReason').value='';
-  updateOnlineSaldo();
-  updateMonthlyChart();
-}
+  // CALCOLO TOTALE
+  function getTotals(){
+    let entrate=0,uscite=0;
+    document.querySelectorAll("#entryLog .log-item").forEach(i=>entrate+=Number(i.dataset.amt));
+    document.querySelectorAll("#exitLog .log-item").forEach(i=>uscite+=Number(i.dataset.amt));
+    return {entrate,uscite,net:entrate-uscite};
+  }
+  async function saveCalc(){
+    const totals=getTotals();
+    await db.collection("calcHistory").add({userId:currentUser.id,...totals,createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+    alert("Calcolo salvato");
+  }
 
-// AGGIUNTA USCITA
-async function addExit(){
-  const amt=document.getElementById('exitAmount').value;
-  const reason=document.getElementById('exitReason').value;
-  if(!amt||isNaN(amt)) return alert("Importo non valido");
-  await addDoc(collection(db,"exits"),{userId:currentUser.id,amount:Number(amt),reason,createdAt:serverTimestamp()});
-  document.getElementById('exitAmount').value=''; document.getElementById('exitReason').value='';
-  updateOnlineSaldo();
-  updateMonthlyChart();
-}
+  // PRESENCE
+  async function setOnline(status){
+    if(!currentUser) return;
+    await db.collection("presence").doc(currentUser.id).set({
+      userId:currentUser.id,
+      online:status,
+      saldo:getTotals().net,
+      lastActive:firebase.firestore.FieldValue.serverTimestamp()
+    },{merge:true});
+  }
+  async function updateOnlineSaldo(){if(currentUser) setOnline(true);}
 
-// SALVA CALCOLO
-async function saveCalc(){
-  const totals=getTotals();
-  await addDoc(collection(db,"calcHistory"),{userId:currentUser.id,...totals,createdAt:serverTimestamp()});
-  alert("Calcolo salvato");
-}
+  // LISTENERS
+  function listenData(){
+    db.collection("entries").where("userId","==",currentUser.id).orderBy("createdAt","desc")
+      .onSnapshot(snap=>{
+        const container=document.getElementById('entryLog'); container.innerHTML='';
+        snap.docs.forEach(d=>{
+          const dt=d.data();
+          const div=document.createElement('div');
+          div.className='log-item'; div.dataset.amt=dt.amount;
+          div.innerText=`+€${dt.amount.toFixed(2)} | ${dt.reason}`;
+          container.appendChild(div);
+        });
+        updateTotalsDisplay();
+      });
 
-// CALCOLA TOTALE
-function getTotals(){
-  const e=document.querySelectorAll("#entryLog .log-item");
-  const x=document.querySelectorAll("#exitLog .log-item");
-  let entrate=0, uscite=0;
-  e.forEach(i=>entrate+=Number(i.dataset.amt));
-  x.forEach(i=>uscite+=Number(i.dataset.amt));
-  return {entrate,uscite,net:entrate-uscite};
-}
+    db.collection("exits").where("userId","==",currentUser.id).orderBy("createdAt","desc")
+      .onSnapshot(snap=>{
+        const container=document.getElementById('exitLog'); container.innerHTML='';
+        snap.docs.forEach(d=>{
+          const dt=d.data();
+          const div=document.createElement('div');
+          div.className='log-item'; div.dataset.amt=dt.amount;
+          div.innerText=`-€${dt.amount.toFixed(2)} | ${dt.reason}`;
+          container.appendChild(div);
+        });
+        updateTotalsDisplay();
+      });
 
-// PRESENCE
-async function setOnline(status){
-  if(!currentUser) return;
-  const ref = doc(db,"presence",currentUser.id);
-  await setDoc(ref,{userId:currentUser.id,online:status,lastActive:serverTimestamp(),saldo:getTotals().net},{merge:true});
-}
+    db.collection("calcHistory").where("userId","==",currentUser.id).orderBy("createdAt","desc")
+      .onSnapshot(snap=>{
+        const container=document.getElementById('calcLog'); container.innerHTML='';
+        snap.docs.forEach(d=>{
+          const dt=d.data();
+          const div=document.createElement('div');
+          div.className='log-item';
+          div.innerText=`Entrate: €${dt.entrate.toFixed(2)} | Uscite: €${dt.uscite.toFixed(2)} | Saldo: €${dt.net.toFixed(2)}`;
+          container.appendChild(div);
+        });
+      });
+  }
+  function updateTotalsDisplay(){
+    const totals=getTotals();
+    document.getElementById('totals').innerText=`Entrate: €${totals.entrate.toFixed(2)} | Uscite: €${totals.uscite.toFixed(2)} | Saldo: €${totals.net.toFixed(2)}`;
+  }
 
-// aggiorna solo saldo
-async function updateOnlineSaldo(){
-  if(!currentUser) return;
-  const ref = doc(db,"presence",currentUser.id);
-  await setDoc(ref,{saldo:getTotals().net},{merge:true});
-}
-
-// FIRESTORE LISTENER
-function listenData(){
-  const entriesCol=collection(db,"entries");
-  const qE=query(entriesCol, where("userId","==",currentUser.id), orderBy("createdAt","desc"));
-  onSnapshot(qE,snap=>{
-    const container=document.getElementById('entryLog');
-    container.innerHTML='';
-    snap.docs.forEach(d=>{
-      const dt=d.data();
-      const div=document.createElement('div');
-      div.className='log-item';
-      div.dataset.amt=dt.amount;
-      div.innerHTML=`<span>+€${dt.amount.toFixed(2)} | ${dt.reason}</span>`;
-      container.appendChild(div);
+  // PRESENCE USERS
+  function listenUsersPresence(){
+    db.collection("presence").onSnapshot(snap=>{
+      const container=document.getElementById("usersList"); container.innerHTML='';
+      snap.docs.forEach(d=>{
+        const dt=d.data();
+        const color=dt.online?"green":"red";
+        const name = dt.userId===currentUser.id ? `${currentUser.nome} ${currentUser.cognome}` : dt.userId;
+        const div=document.createElement('div');
+        div.innerHTML=`<span style="color:${color}">●</span>${name} - Saldo: €${(dt.saldo||0).toFixed(2)}`;
+        container.appendChild(div);
+      });
     });
-    updateTotals();
-  });
+  }
 
-  const exitsCol=collection(db,"exits");
-  const qX=query(exitsCol, where("userId","==",currentUser.id), orderBy("createdAt","desc"));
-  onSnapshot(qX,snap=>{
-    const container=document.getElementById('exitLog');
-    container.innerHTML='';
-    snap.docs.forEach(d=>{
-      const dt=d.data();
-      const div=document.createElement('div');
-      div.className='log-item';
-      div.dataset.amt=dt.amount;
-      div.innerHTML=`<span>-€${dt.amount.toFixed(2)} | ${dt.reason}</span>`;
-      container.appendChild(div);
+  // VISIBILITY API
+  document.addEventListener("visibilitychange", ()=>{if(currentUser) setOnline(document.visibilityState==="visible");});
+  window.addEventListener("beforeunload", ()=>setOnline(false));
+
+  // GRAFICO MENSILE
+  async function updateMonthlyChart(){
+    const snap = await db.collection("exits").where("userId","==",currentUser.id).get();
+    const data = snap.docs.map(d=>d.data());
+    const now = new Date(); const thisMonth = now.getMonth(); const thisYear = now.getFullYear();
+    const lastMonth = (thisMonth===0)?11:thisMonth-1;
+    const lastMonthYear = (thisMonth===0)?thisYear-1:thisYear;
+    let totalThisMonth=0,totalLastMonth=0;
+    data.forEach(d=>{
+      const date = d.createdAt?.toDate?.() || new Date();
+      const m = date.getMonth(); const y=date.getFullYear();
+      if(m===thisMonth && y===thisYear) totalThisMonth+=d.amount;
+      if(m===lastMonth && y===lastMonthYear) totalLastMonth+=d.amount;
     });
-    updateTotals();
-  });
-
-  const cCol=collection(db,"calcHistory");
-  const qC=query(cCol, where("userId","==",currentUser.id), orderBy("createdAt","desc"));
-  onSnapshot(qC,snap=>{
-    const container=document.getElementById('calcLog');
-    container.innerHTML='';
-    snap.docs.forEach(d=>{
-      const dt=d.data();
-      const div=document.createElement('div');
-      div.className='log-item';
-      div.innerHTML=`Entrate: €${dt.entrate.toFixed(2)} | Uscite: €${dt.uscite.toFixed(2)} | Saldo: €${dt.net.toFixed(2)}`;
-      container.appendChild(div);
+    const perc = totalLastMonth===0 ? 0 : ((totalThisMonth-totalLastMonth)/totalLastMonth*100).toFixed(1);
+    document.getElementById('monthlyComparison').innerText =
+      perc>0 ? `Hai speso il ${perc}% in più rispetto al mese scorso` :
+      perc<0 ? `Hai speso il ${Math.abs(perc)}% in meno rispetto al mese scorso` :
+      `La spesa è uguale al mese scorso`;
+    if(monthlyChart) monthlyChart.destroy();
+    const ctx=document.getElementById('monthlyChart').getContext('2d');
+    monthlyChart = new Chart(ctx,{
+      type:'bar',
+      data:{
+        labels:['Mese Scorso','Mese Corrente'],
+        datasets:[{label:'Uscite (€)',data:[totalLastMonth,totalThisMonth],backgroundColor:[totalThisMonth>=totalLastMonth?'red':'green','green']}]
+      },
+      options:{responsive:true,plugins:{legend:{display:false}}}
     });
-  });
-}
-
-function updateTotals(){
-  const totals=getTotals();
-  document.getElementById('totals').innerText=`Entrate: €${totals.entrate.toFixed(2)} | Uscite: €${totals.uscite.toFixed(2)} | Saldo: €${totals.net.toFixed(2)}`;
-  updateOnlineSaldo();
-}
-
-// PRESENCE LISTENER
-function listenUsersPresence(){
-  const presenceCol=collection(db,"presence");
-  onSnapshot(presenceCol,snap=>{
-    const container=document.getElementById("usersList");
-    container.innerHTML='';
-    snap.docs.forEach(d=>{
-      const dt=d.data();
-      const color=dt.online?"green":"red";
-      const name = dt.userId===currentUser.id ? `${currentUser.nome} ${currentUser.cognome}` : dt.userId;
-      const div=document.createElement('div');
-      div.innerHTML=`<span style="color:${color}">●</span>${name} - Saldo: €${(dt.saldo||0).toFixed(2)}`;
-      container.appendChild(div);
-    });
-  });
-}
-
-// VISIBILITY API
-document.addEventListener("visibilitychange", ()=>{
-  if(currentUser) setOnline(document.visibilityState==="visible");
-});
-window.addEventListener("beforeunload", ()=>setOnline(false));
-
-// GRAFICO MENSILE
-async function updateMonthlyChart(){
-  if(!currentUser) return;
-  const exitsCol=collection(db,"exits");
-  const snap=await getDocs(query(exitsCol, where("userId","==",currentUser.id)));
-  const data= snap.docs.map(d=>d.data());
-
-  const now = new Date();
-  const thisMonth = now.getMonth();
-  const thisYear = now.getFullYear();
-  const lastMonth = (thisMonth===0)?11:thisMonth-1;
-  const lastMonthYear = (thisMonth===0)?thisYear-1:thisYear;
-
-  let totalThisMonth=0, totalLastMonth=0;
-  data.forEach(d=>{
-    const date=d.createdAt?.toDate?.() || new Date();
-    const m=date.getMonth();
-    const y=date.getFullYear();
-    if(m===thisMonth && y===thisYear) totalThisMonth+=d.amount;
-    if(m===lastMonth && y===lastMonthYear) totalLastMonth+=d.amount;
-  });
-
-  const perc = totalLastMonth===0 ? 0 : ((totalThisMonth-totalLastMonth)/totalLastMonth*100).toFixed(1);
-
-  document.getElementById('monthlyComparison').innerText =
-    perc>0 ? `Hai speso il ${perc}% in più rispetto al mese scorso` :
-    perc<0 ? `Hai speso il ${Math.abs(perc)}% in meno rispetto al mese scorso` :
-    `La spesa è uguale al mese scorso`;
-
-  if(monthlyChart) monthlyChart.destroy();
-  const ctx=document.getElementById('monthlyChart').getContext('2d');
-  monthlyChart = new Chart(ctx,{
-    type:'bar',
-    data:{
-      labels:['Mese Scorso','Mese Corrente'],
-      datasets:[{
-        label:'Uscite (€)',
-        data:[totalLastMonth,totalThisMonth],
-        backgroundColor:[totalThisMonth>=totalLastMonth?varColor('--red'):varColor('--green'), varColor('--green')]
-      }]
-    },
-    options:{responsive:true,plugins:{legend:{display:false}}}
-  });
-}
-
-function varColor(varName){return getComputedStyle(document.documentElement).getPropertyValue(varName);}
+  }
 </script>
 </body>
 </html>
