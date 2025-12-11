@@ -126,7 +126,7 @@ loginBtn.addEventListener('click', async () => {
   const userId = makeUserId(nome,cognome,telefono);
   currentUser = { nome, cognome, telefono, userId };
 
-  // salva locale
+  // salva locale (usando una chiave generica)
   localStorage.setItem('gd_user', JSON.stringify(currentUser));
 
   // crea/aggiorna doc utente in firestore con campi base
@@ -318,16 +318,19 @@ function showProfileInMain(userDocData){
   if(userDocData.photoURL){
     avatarDisplay.innerHTML = `<img src="${userDocData.photoURL}" alt="avatar">`;
   } else {
-    avatarDisplay.innerHTML = `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-weight:700">${(userDocData.nome||'')[0]||'?'}</div>`;
+    avatarDisplay.innerHTML = `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:32px;">${(userDocData.nome||'')[0]||'?'}</div>`;
   }
 
-  // if this is not currentUser, disable file input
-  if(!currentUser || userDocData.userId !== currentUser.userId){
+  // Se l'utente visualizzato NON è l'utente corrente, disabilita l'input file
+  const isCurrentUserProfile = currentUser && userDocData.userId === currentUser.userId;
+  const uploadButtonLabel = profileFileInput.closest('label');
+
+  if(!isCurrentUserProfile){
     profileFileInput.disabled = true;
-    profileFileInput.style.opacity = 0.5;
+    if(uploadButtonLabel) uploadButtonLabel.style.display = 'none'; // Nascondi il pulsante
   } else {
     profileFileInput.disabled = false;
-    profileFileInput.style.opacity = 1;
+    if(uploadButtonLabel) uploadButtonLabel.style.display = 'inline-block'; // Mostra il pulsante
   }
 }
 
@@ -346,6 +349,7 @@ async function loadUserProfilePhoto(userId){
         avatarPreviewLogin.style.backgroundSize = 'cover';
       } else {
         avatarDisplay.innerHTML = '';
+        avatarPreviewLogin.style.backgroundImage = 'none';
       }
     }
   } catch(err){
@@ -357,7 +361,7 @@ async function loadUserProfilePhoto(userId){
    UPLOAD PROFILE IMAGE (only for current user)
    ============================ */
 profileFileInput?.addEventListener('change', async (ev) => {
-  if(!currentUser) return alert('Effettua login prima.');
+  if(!currentUser || profileFileInput.disabled) return alert('Operazione non permessa.');
   const f = ev.target.files[0];
   if(!f) return;
   // simple size check (limit e.g. 4MB)
@@ -381,6 +385,9 @@ profileFileInput?.addEventListener('change', async (ev) => {
   } catch(err){
     console.error('upload error', err);
     alert('Errore durante l\'upload. Controlla la console.');
+  } finally {
+    // Reset input file per permettere un nuovo upload dello stesso file
+    ev.target.value = '';
   }
 });
 
@@ -521,6 +528,9 @@ async function generateMonthlyReport(){
   const data = [prevTotal, thisTotal];
 
   if(monthlyChart) monthlyChart.destroy();
+  // Necessario includere Chart qui, altrimenti il linter si lamenta
+  // La libreria Chart.js è caricata in index.html, quindi 'Chart' è disponibile globalmente.
+  // eslint-disable-next-line no-undef
   monthlyChart = new Chart(monthlyCanvas, {
     type: 'bar',
     data: {
@@ -564,9 +574,6 @@ function scheduleMonthlyAuto(){
    (so that online statuses toggle as time passes)
    ============================ */
 setInterval(()=> {
-  // force re-render users list by re-subscribing (cheap approach: when usersUnsub exists, it will get realtime updates anyway)
-  // but we can re-query and re-render presence-driven UI; simplest option: refetch users snapshot once:
-  if(!usersUnsub) return;
   // we leave the realtime listener to keep updating; here we might trigger minor UI updates via re-calc,
   // but onSnapshot already updates 'lastSeen' changes; so nothing required here.
 }, 30_000);
@@ -582,7 +589,11 @@ function showProfileInMainInitial(){
       const uRef = doc(db, 'users', currentUser.userId);
       const snap = await getDoc(uRef);
       if(snap.exists()){
-        showProfileInMain(snap.data());
+        // Mostra il profilo, assicurandoti che l'upload button sia visibile
+        const data = snap.data();
+        showProfileInMain(data);
+        const uploadButtonLabel = profileFileInput.closest('label');
+        if(uploadButtonLabel) uploadButtonLabel.style.display = 'inline-block';
       } else {
         // fallback UI
         profileName.textContent = `${currentUser.nome} ${currentUser.cognome}`;
@@ -614,8 +625,10 @@ setTimeout(()=> {
 /* ============================
    Helper: getDoc wrapper (since we used it above)
    ============================ */
-import { getDoc as _getDoc } from "https://www.gstatic.com/firebasejs/10.5.2/firebase-firestore.js";
-const getDoc = _getDoc;
+// Non è necessario rifare l'import di getDoc se la sua definizione è inclusa nell'import principale.
+// Rimosso il codice superfluo:
+// import { getDoc as _getDoc } from "https://www.gstatic.com/firebasejs/10.5.2/firebase-firestore.js";
+// const getDoc = _getDoc;
 
 /* ============================
    Keep logs refreshed every 45s
