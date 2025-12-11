@@ -106,7 +106,7 @@ function startPresence(userId){
   setPresencePing(userId);
   if(presenceIntervalHandle) clearInterval(presenceIntervalHandle);
   // IMPOSTATO A 2 SECONDI COME RICHIESTO
-  presenceIntervalHandle = setInterval(()=> setPresencePing(userId), 2_000); 
+  presenceIntervalHandle = setInterval(()=> setPresencePing(userId), 15_000); 
 }
 
 /* ferma ping */
