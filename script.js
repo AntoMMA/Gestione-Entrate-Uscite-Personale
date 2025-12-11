@@ -528,8 +528,6 @@ async function generateMonthlyReport(){
   const data = [prevTotal, thisTotal];
 
   if(monthlyChart) monthlyChart.destroy();
-  // Necessario includere Chart qui, altrimenti il linter si lamenta
-  // La libreria Chart.js è caricata in index.html, quindi 'Chart' è disponibile globalmente.
   // eslint-disable-next-line no-undef
   monthlyChart = new Chart(monthlyCanvas, {
     type: 'bar',
@@ -621,14 +619,6 @@ async function initialAfterLogin(){
 setTimeout(()=> {
   if(currentUser) initialAfterLogin();
 }, 600);
-
-/* ============================
-   Helper: getDoc wrapper (since we used it above)
-   ============================ */
-// Non è necessario rifare l'import di getDoc se la sua definizione è inclusa nell'import principale.
-// Rimosso il codice superfluo:
-// import { getDoc as _getDoc } from "https://www.gstatic.com/firebasejs/10.5.2/firebase-firestore.js";
-// const getDoc = _getDoc;
 
 /* ============================
    Keep logs refreshed every 45s
