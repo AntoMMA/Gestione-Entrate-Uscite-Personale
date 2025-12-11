@@ -1,49 +1,64 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Entrate e Uscite</title>
-    <link rel="stylesheet" href="style.css">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Gestione Entrate & Uscite</title>
+    <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
-    <div id="login-container">
-        <h2>Accesso</h2>
-        <input id="nome" type="text" placeholder="Nome">
-        <input id="cognome" type="text" placeholder="Cognome">
-        <input id="telefono" type="text" placeholder="Telefono">
-        <button id="login-btn">Entra</button>
+    <!-- ==========================
+         LOGIN A PAGINA INTERA
+    =========================== -->
+    <div id="login-screen">
+        <div id="login-container" class="rgb-border">
+            <h2>Accesso</h2>
+
+            <input id="nome" type="text" placeholder="Nome">
+            <input id="cognome" type="text" placeholder="Cognome">
+            <input id="telefono" type="text" placeholder="Telefono">
+
+            <button id="login-btn">Entra</button>
+        </div>
     </div>
 
+
+    <!-- ==========================
+         APP (NASCOSTA FINCHÉ NON SI FA LOGIN)
+    =========================== -->
     <div id="app" class="hidden">
 
         <div id="sidebar">
-            <h3>Utenti</h3>
+            <h3>Utenti registrati</h3>
             <ul id="users-list"></ul>
         </div>
 
         <div id="main-content">
+
             <h2 id="welcome"></h2>
 
             <div class="box entrata">
-                <h3>Entrata (€)</h3>
+                <h3>Aggiungi Entrata</h3>
                 <input type="number" id="entrata-importo" placeholder="Importo">
                 <input type="text" id="entrata-motivo" placeholder="Motivo">
-                <button id="add-entrata">Aggiungi Entrata</button>
+                <button id="add-entrata">Aggiungi</button>
             </div>
 
             <div class="box uscita">
-                <h3>Uscita (€)</h3>
+                <h3>Aggiungi Uscita</h3>
                 <input type="number" id="uscita-importo" placeholder="Importo">
                 <input type="text" id="uscita-motivo" placeholder="Motivo">
-                <button id="add-uscita">Aggiungi Uscita</button>
+                <button id="add-uscita">Aggiungi</button>
             </div>
 
             <h3>Totali</h3>
             <p id="saldo-totale"></p>
 
-            <canvas id="monthlyChart"></canvas>
+            <button id="monthly-report-btn">Resoconto mensile</button>
+            <p id="monthly-summary"></p>
+
+            <canvas id="monthlyChart" width="600" height="300"></canvas>
 
             <h3>Log Entrate</h3>
             <ul id="log-entrate"></ul>
@@ -54,10 +69,11 @@
         </div>
 
     </div>
-    
 
-    <!-- Firebase modules + app logic -->
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- Script principale -->
     <script type="module" src="script.js"></script>
-
 </body>
 </html>
