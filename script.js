@@ -1,13 +1,12 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.6.0/firebase-app.js";
+// ---------------------------
+// 🔥 Firebase Config
+// ---------------------------
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.5.2/firebase-app.js";
 import {
-  getFirestore, collection, query, where, getDocs, addDoc,
-  orderBy, onSnapshot, serverTimestamp, doc, setDoc
-} from "https://www.gstatic.com/firebasejs/10.6.0/firebase-firestore.js";
+    getFirestore, collection, doc, setDoc, getDocs,
+    query, where, addDoc, onSnapshot, serverTimestamp
+} from "https://www.gstatic.com/firebasejs/10.5.2/firebase-firestore.js";
 
-import { Chart } from "https://cdn.jsdelivr.net/npm/chart.js";
-
-
-// 🔥 FIREBASE CONFIG — METTI LA TUA QUI
 const firebaseConfig = {
   apiKey: "AIzaSyDA8x2UcwoDBNbEZbsE5nGUNlLHI-aXUHA",
   authDomain: "gestionale-entrate-uscite-wr.firebaseapp.com",
@@ -18,320 +17,159 @@ const firebaseConfig = {
   measurementId: "G-XFL9ZH8K6T"
 };
 
-
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
+// ---------------------------
+// Login / Registrazione
+// ---------------------------
+const loginBtn = document.getElementById("login-btn");
+loginBtn.addEventListener("click", async () => {
+    const nome = document.getElementById("nome").value.trim();
+    const cognome = document.getElementById("cognome").value.trim();
+    const telefono = document.getElementById("telefono").value.trim();
 
-let currentUser = null;
-let monthlyChart = null;
+    if (!nome || !cognome || !telefono) {
+        alert("Compila tutti i campi");
+        return;
+    }
 
-// LOGIN
-document.getElementById("btnLogin").onclick = async () => {
+    const usersRef = collection(db, "users");
+    const q = query(usersRef, where("telefono", "==", telefono));
+    const snap = await getDocs(q);
 
-  const nome = nomeInput.value.trim();
-  const cognome = cognomeInput.value.trim();
-  const telefono = telefonoInput.value.trim();
+    let userId = "";
 
-  if (!nome || !cognome || !telefono) {
-    loginMsg.innerText = "Compila tutti i campi";
-    return;
-  }
+    if (snap.empty) {
+        const userDoc = await addDoc(usersRef, {
+            nome,
+            cognome,
+            telefono,
+            saldo: 0,
+            lastLogin: serverTimestamp()
+        });
+        userId = userDoc.id;
+    } else {
+        userId = snap.docs[0].id;
+    }
 
-  const usersCol = collection(db, "users");
-  const q = query(
-    usersCol,
-    where("nome", "==", nome),
-    where("cognome", "==", cognome),
-    where("telefono", "==", telefono)
-  );
+    localStorage.setItem("userId", userId);
 
-  const snap = await getDocs(q);
+    document.getElementById("login-container").classList.add("hidden");
+    document.getElementById("app").classList.remove("hidden");
 
-  if (snap.empty) {
-    const newUser = await addDoc(usersCol, {
-      nome, cognome, telefono,
-      createdAt: serverTimestamp()
-    });
-
-    currentUser = {
-      id: newUser.id,
-      nome, cognome, telefono
-    };
-  } else {
-    const d = snap.docs[0].data();
-    currentUser = {
-      id: snap.docs[0].id,
-      nome: d.nome,
-      cognome: d.cognome,
-      telefono: d.telefono
-    };
-  }
-
-  loginCard.style.display = "none";
-  dashboard.style.display = "block";
-
-  greeting.innerText = `Ciao ${currentUser.nome} ${currentUser.cognome}`;
-
-  setOnline(true);
-
-  listenUserData();
-  listenUsersPresence();
-  updateMonthlyChart();
-};
-
-// LOGOUT
-window.logout = () => {
-  setOnline(false);
-  currentUser = null;
-  dashboard.style.display = "none";
-  loginCard.style.display = "block";
-};
-
-// ENTRATA
-window.addEntry = async () => {
-  const amount = Number(entryAmount.value);
-  const reason = entryReason.value;
-
-  if (!amount) return alert("Importo non valido");
-
-  await addDoc(collection(db, "entries"), {
-    userId: currentUser.id,
-    amount,
-    reason,
-    createdAt: serverTimestamp()
-  });
-
-  entryAmount.value = "";
-  entryReason.value = "";
-  updateOnlineSaldo();
-  updateMonthlyChart();
-};
-
-// USCITA
-window.addExit = async () => {
-  const amount = Number(exitAmount.value);
-  const reason = exitReason.value;
-
-  if (!amount) return alert("Importo non valido");
-
-  await addDoc(collection(db, "exits"), {
-    userId: currentUser.id,
-    amount,
-    reason,
-    createdAt: serverTimestamp()
-  });
-
-  exitAmount.value = "";
-  exitReason.value = "";
-  updateOnlineSaldo();
-  updateMonthlyChart();
-};
-
-// SALVA TOTALE
-window.saveCalc = async () => {
-  const totals = getTotals();
-  await addDoc(collection(db, "calcHistory"), {
-    userId: currentUser.id,
-    ...totals,
-    createdAt: serverTimestamp()
-  });
-  alert("Calcolo salvato!");
-};
-
-// CALCOLA TOTALI
-function getTotals() {
-  const e = document.querySelectorAll("#entryLog .log-item");
-  const x = document.querySelectorAll("#exitLog .log-item");
-
-  let entrate = 0;
-  let uscite = 0;
-
-  e.forEach(item => entrate += Number(item.dataset.amt));
-  x.forEach(item => uscite += Number(item.dataset.amt));
-
-  return {
-    entrate,
-    uscite,
-    net: entrate - uscite
-  };
-}
-
-// AGGIORNA TOTALI
-function updateTotals() {
-  const t = getTotals();
-
-  totals.innerText =
-    `Entrate: €${t.entrate.toFixed(2)} | Uscite: €${t.uscite.toFixed(2)} | Saldo: €${t.net.toFixed(2)}`;
-
-  updateOnlineSaldo();
-}
-
-// PRESENZA ONLINE
-async function setOnline(status) {
-  if (!currentUser) return;
-
-  const ref = doc(db, "presence", currentUser.id);
-
-  await setDoc(ref, {
-    userId: currentUser.id,
-    nome: currentUser.nome,
-    cognome: currentUser.cognome,
-    online: status,
-    saldo: getTotals().net,
-    lastActive: serverTimestamp()
-  }, { merge: true });
-}
-
-// solo saldo
-async function updateOnlineSaldo() {
-  if (!currentUser) return;
-  const ref = doc(db, "presence", currentUser.id);
-  await setDoc(ref, { saldo: getTotals().net }, { merge: true });
-}
-
-// LISTENER ENTRATE/USCITE/CALCOLI
-function listenUserData() {
-
-  // ENTRATE
-  const entriesQ = query(
-    collection(db, "entries"),
-    where("userId", "==", currentUser.id),
-    orderBy("createdAt", "desc")
-  );
-
-  onSnapshot(entriesQ, snap => {
-    entryLog.innerHTML = "";
-    snap.forEach(doc => {
-      const d = doc.data();
-      const div = document.createElement("div");
-      div.className = "log-item";
-      div.dataset.amt = d.amount;
-      div.innerHTML = `+€${d.amount} | ${d.reason}`;
-      entryLog.appendChild(div);
-    });
-    updateTotals();
-  });
-
-  // USCITE
-  const exitsQ = query(
-    collection(db, "exits"),
-    where("userId", "==", currentUser.id),
-    orderBy("createdAt", "desc")
-  );
-
-  onSnapshot(exitsQ, snap => {
-    exitLog.innerHTML = "";
-    snap.forEach(doc => {
-      const d = doc.data();
-      const div = document.createElement("div");
-      div.className = "log-item";
-      div.dataset.amt = d.amount;
-      div.innerHTML = `-€${d.amount} | ${d.reason}`;
-      exitLog.appendChild(div);
-    });
-    updateTotals();
-  });
-
-  // STORICO CALCOLI
-  const calcQ = query(
-    collection(db, "calcHistory"),
-    where("userId", "==", currentUser.id),
-    orderBy("createdAt", "desc")
-  );
-
-  onSnapshot(calcQ, snap => {
-    calcLog.innerHTML = "";
-    snap.forEach(doc => {
-      const d = doc.data();
-      const div = document.createElement("div");
-      div.className = "log-item";
-      div.innerHTML =
-        `Entrate: €${d.entrate} | Uscite: €${d.uscite} | Saldo: €${d.net}`;
-      calcLog.appendChild(div);
-    });
-  });
-}
-
-// LISTA UTENTI ONLINE
-function listenUsersPresence() {
-  const q = collection(db, "presence");
-
-  onSnapshot(q, snap => {
-    usersList.innerHTML = "";
-
-    snap.forEach(doc => {
-      const u = doc.data();
-      const color = u.online ? "green" : "red";
-
-      const div = document.createElement("div");
-      div.innerHTML =
-        `<span style="color:${color}">●</span> ${u.nome} ${u.cognome} — €${u.saldo?.toFixed(2) || 0}`;
-      usersList.appendChild(div);
-    });
-  });
-}
-
-// VISIBILITY
-document.addEventListener("visibilitychange", () => {
-  if (currentUser) setOnline(document.visibilityState === "visible");
+    startApp(userId);
 });
 
-window.addEventListener("beforeunload", () => setOnline(false));
+// ---------------------------
+// Funzione principale
+// ---------------------------
+async function startApp(userId) {
+    const userDoc = (await getDocs(query(collection(db, "users"), where("__name__", "==", userId)))).docs[0];
+    const user = userDoc.data();
 
+    document.getElementById("welcome").innerText =
+        `Ciao ${user.nome} ${user.cognome}`;
 
-// GRAFICO MENSILE
-async function updateMonthlyChart() {
-  if (!currentUser) return;
+    // ---------------------------
+    // Stato Online
+    // ---------------------------
+    const presenceRef = doc(db, "presence", userId);
+    await setDoc(presenceRef, { online: true }, { merge: true });
 
-  const snap = await getDocs(
-    query(collection(db, "exits"), where("userId", "==", currentUser.id))
-  );
+    window.addEventListener("beforeunload", async () => {
+        await setDoc(presenceRef, { online: false }, { merge: true });
+    });
 
-  const now = new Date();
-  const m = now.getMonth();
-  const y = now.getFullYear();
+    // ---------------------------
+    // Aggiungi Entrata
+    // ---------------------------
+    document.getElementById("add-entrata").addEventListener("click", async () => {
+        const importo = Number(document.getElementById("entrata-importo").value);
+        const motivo = document.getElementById("entrata-motivo").value;
 
-  const lastM = m === 0 ? 11 : m - 1;
-  const lastY = m === 0 ? y - 1 : y;
+        if (!importo || !motivo) return;
 
-  let thisTotal = 0;
-  let lastTotal = 0;
+        await addDoc(collection(db, "entries"), {
+            userId,
+            importo,
+            motivo,
+            createdAt: serverTimestamp()
+        });
+    });
 
-  snap.forEach(doc => {
-    const d = doc.data();
-    const date = d.createdAt?.toDate() || new Date();
+    // ---------------------------
+    // Aggiungi Uscita
+    // ---------------------------
+    document.getElementById("add-uscita").addEventListener("click", async () => {
+        const importo = Number(document.getElementById("uscita-importo").value);
+        const motivo = document.getElementById("uscita-motivo").value;
 
-    if (date.getMonth() === m && date.getFullYear() === y)
-      thisTotal += d.amount;
+        if (!importo || !motivo) return;
 
-    if (date.getMonth() === lastM && date.getFullYear() === lastY)
-      lastTotal += d.amount;
-  });
+        await addDoc(collection(db, "exits"), {
+            userId,
+            importo,
+            motivo,
+            createdAt: serverTimestamp()
+        });
+    });
 
-  const perc = lastTotal === 0 ? 0 :
-    ((thisTotal - lastTotal) / lastTotal * 100).toFixed(1);
+    // ---------------------------
+    // Log Entrate/Uscite in tempo reale
+    // ---------------------------
+    onSnapshot(query(collection(db, "entries"), where("userId", "==", userId)), snap => {
+        const list = document.getElementById("log-entrate");
+        list.innerHTML = "";
+        snap.forEach(d => list.innerHTML += `<li>+€${d.data().importo} — ${d.data().motivo}</li>`);
+    });
 
-  monthlyComparison.innerText =
-    perc > 0 ? `Hai speso il ${perc}% in più`
-    : perc < 0 ? `Hai speso il ${Math.abs(perc)}% in meno`
-    : `Spesa identica al mese scorso`;
+    onSnapshot(query(collection(db, "exits"), where("userId", "==", userId)), snap => {
+        const list = document.getElementById("log-uscite");
+        list.innerHTML = "";
+        snap.forEach(d => list.innerHTML += `<li>-€${d.data().importo} — ${d.data().motivo}</li>`);
+    });
 
-  // CHART
-  const ctx = document.getElementById("monthlyChart").getContext("2d");
+    // ---------------------------
+    // Lista Utenti + Stato Online
+    // ---------------------------
+    onSnapshot(collection(db, "presence"), snap => {
+        const list = document.getElementById("users-list");
+        list.innerHTML = "";
 
-  if (monthlyChart) monthlyChart.destroy();
+        snap.forEach(async presenceDoc => {
+            const uid = presenceDoc.id;
+            const presence = presenceDoc.data();
 
-  monthlyChart = new Chart(ctx, {
-    type: "bar",
-    data: {
-      labels: ["Mese Scorso", "Mese Corrente"],
-      datasets: [{
-        label: "Uscite (€)",
-        data: [lastTotal, thisTotal],
-        backgroundColor: ["#ff5c5c", "#3ddc84"]
-      }]
-    },
-    options: { responsive: true }
-  });
+            const userSnap = await getDocs(
+                query(collection(db, "users"), where("__name__", "==", uid))
+            );
+
+            if (userSnap.empty) return;
+            const u = userSnap.docs[0].data();
+
+            list.innerHTML += `
+                <li>
+                    <span class="${presence.online ? "green" : "red"}"></span>
+                    ${u.nome} ${u.cognome}
+                </li>
+            `;
+        });
+    });
+
+    // ---------------------------
+    // Grafico Mensile (Chart.js globale)
+    // ---------------------------
+    const ctx = document.getElementById("monthlyChart");
+
+    new Chart(ctx, {
+        type: "bar",
+        data: {
+            labels: ["Mese Scorso", "Questo Mese"],
+            datasets: [{
+                label: "Differenza Spesa",
+                data: [50, 70]
+            }]
+        }
+    });
 }
