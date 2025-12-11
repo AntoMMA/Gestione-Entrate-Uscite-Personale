@@ -1,57 +1,137 @@
+/* Basic */
+:root{
+  --bg: #0b0b0b;
+  --panel: rgba(255,255,255,0.04);
+  --text: #fff;
+}
+*{box-sizing:border-box}
 body {
-    font-family: Arial;
+    font-family: Inter, Arial, sans-serif;
     margin: 0;
-    background: #111;
-    color: white;
+    background: var(--bg);
+    color: var(--text);
+    -webkit-font-smoothing:antialiased;
+    -moz-osx-font-smoothing:grayscale;
 }
 
+/* Hide helper */
 .hidden { display: none; }
 
-#login-container {
-    padding: 20px;
+/* Center login screen full viewport */
+#login-screen{
+  min-height:100vh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:24px;
 }
 
+/* Animated RGB border container (outer) */
+.rgb-border{
+  position:relative;
+  padding:2px; /* space for border */
+  border-radius:14px;
+  background:linear-gradient(90deg,#0000,#0000); /* fallback */
+  --border-size:3px;
+}
+
+/* Animated gradient (pseudo element) */
+.rgb-border::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  padding:var(--border-size);
+  border-radius:12px;
+  -webkit-mask: linear-gradient(#000,#000) content-box, linear-gradient(#000,#000);
+  mask: linear-gradient(#000,#000) content-box, linear-gradient(#000,#000);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  background: conic-gradient(from 0deg, #ff004d, #ff7300, #ffee00, #2bff00, #00eaff, #3f00ff, #ff00d4, #ff004d);
+  animation: rotate-colors 4s linear infinite;
+  z-index:2;
+}
+
+/* inner content (login card) */
+#login-container{
+  position:relative;
+  z-index:3;
+  min-width:320px;
+  max-width:420px;
+  background: rgba(255,255,255,0.03);
+  border-radius:10px;
+  padding:28px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.6);
+  text-align:center;
+}
+
+/* animated subtle glow */
+@keyframes rotate-colors{
+  to { transform: rotate(360deg); }
+}
+
+/* inputs and button */
+#login-container input, #login-container button,
 input, button {
     width: 100%;
-    margin: 6px 0;
+    margin: 8px 0;
     padding: 12px;
     border-radius: 8px;
+    border: none;
+    outline: none;
+    font-size: 15px;
 }
 
+#login-container h2{
+  margin:0 0 12px 0;
+  font-weight:600;
+}
+
+/* App layout */
 #app {
     display: flex;
+    min-height:100vh;
 }
 
 #sidebar {
-    width: 30%;
-    background: rgba(255,255,255,0.1);
-    padding: 10px;
+    width: 28%;
+    background: rgba(255,255,255,0.03);
+    padding: 16px;
+    border-right: 1px solid rgba(255,255,255,0.03);
 }
 
 #main-content {
-    width: 70%;
-    padding: 20px;
+    width: 72%;
+    padding: 24px;
 }
 
 .box {
-    padding: 20px;
+    padding: 16px;
     border-radius: 10px;
     margin-bottom: 20px;
+    background: rgba(255,255,255,0.02);
 }
 
-.entrata { background: rgba(0,255,0,0.2); }
-.uscita { background: rgba(255,0,0,0.2); }
+.entrata { border-left: 6px solid rgba(0,255,0,0.6); }
+.uscita { border-left: 6px solid rgba(255,0,0,0.6); }
 
-.green {
+.green, .red {
     width: 10px; height: 10px;
-    background: lime;
     border-radius: 50%;
     display: inline-block;
+    margin-right:6px;
 }
+.green{ background: #6ef17a; }
+.red{ background: #ff7b7b; }
 
-.red {
-    width: 10px; height: 10px;
-    background: red;
-    border-radius: 50%;
-    display: inline-block;
+#monthlyChart { background: rgba(255,255,255,0.02); border-radius:8px; padding:10px; }
+
+/* monthly report area */
+.report-controls { display:flex; align-items:center; gap:12px; margin-bottom:12px; flex-wrap:wrap; }
+#monthly-summary { font-weight:600; }
+
+/* responsive */
+@media (max-width:800px){
+  #app { flex-direction:column; }
+  #sidebar, #main-content { width:100%;}
+  #login-container { width:100%; max-width:420px; }
 }
