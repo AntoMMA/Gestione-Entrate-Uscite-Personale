@@ -9,9 +9,8 @@ import {
   query, where, orderBy, serverTimestamp, onSnapshot, Timestamp
 } from "https://www.gstatic.com/firebasejs/10.5.2/firebase-firestore.js";
 
-import {
-  getStorage, ref as storageRef, uploadBytes, getDownloadURL
-} from "https://www.gstatic.com/firebasejs/10.5.2/firebase-storage.js";
+// Rimosso: import Firebase Storage
+// Rimosso: getStorage, ref as storageRef, uploadBytes, getDownloadURL
 
 /* ============================
    FIREBASE CONFIG — usa la tua config (già presente)
@@ -27,7 +26,17 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
-const storage = getStorage(app);
+// Rimosso: const storage = getStorage(app);
+
+
+/* ============================
+   CLOUDIDARY CONFIG
+   *** VALORI INSERITI DALL'UTENTE ***
+   ============================ */
+const CLOUDINARY_CLOUD_NAME = "dzgynfn7t"; 
+const CLOUDINARY_UPLOAD_PRESET = "gestionale_personale"; 
+const CLOUDINARY_URL = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`;
+
 
 /* ============================
    DOM REFERENCES
@@ -85,7 +94,7 @@ function makeUserId(nome, cognome, telefono){
 }
 
 /* ============================
-   PRESENCE: aggiorna lastSeen su users/{userId}
+   PRESENCE: aggiorna lastSeen su users/{userId} (a 2s come richiesto)
    ============================ */
 async function setPresencePing(userId){
   if(!userId) return;
@@ -106,7 +115,7 @@ function startPresence(userId){
   setPresencePing(userId);
   if(presenceIntervalHandle) clearInterval(presenceIntervalHandle);
   // IMPOSTATO A 2 SECONDI COME RICHIESTO
-  presenceIntervalHandle = setInterval(()=> setPresencePing(userId), 15_000); 
+  presenceIntervalHandle = setInterval(()=> setPresencePing(userId), 2_000); 
 }
 
 /* ferma ping */
@@ -347,7 +356,8 @@ async function loadUserProfilePhoto(userId){
     if(uSnap.exists()){
       const d = uSnap.data();
       if(d.photoURL){
-        avatarDisplay.innerHTML = `<img src="${d.photoURL}" alt="avatar">`;
+        // Cloudinary URL (o il vecchio Firebase Storage URL)
+        avatarDisplay.innerHTML = `<img src="${d.photoURL}" alt="avatar">`; 
         avatarPreviewLogin.style.backgroundImage = `url(${d.photoURL})`;
         avatarPreviewLogin.style.backgroundSize = 'cover';
       } else {
@@ -361,35 +371,54 @@ async function loadUserProfilePhoto(userId){
 }
 
 /* ============================
-   UPLOAD PROFILE IMAGE (only for current user)
+   UPLOAD PROFILE IMAGE (USANDO CLOUDINARY)
    ============================ */
 profileFileInput?.addEventListener('change', async (ev) => {
   if(!currentUser || profileFileInput.disabled) return alert('Operazione non permessa.');
   const f = ev.target.files[0];
   if(!f) return;
-  // simple size check (limit e.g. 4MB)
+  
   if(f.size > 4 * 1024 * 1024) { alert('File troppo grande (max 4MB)'); return; }
 
-  // PATH FISSO PER L'UTENTE: garantisce che ogni nuovo upload sovrascriva il precedente
-  const path = `user_profiles/${currentUser.userId}/profile_image.jpg`; 
-  const ref = storageRef(storage, path);
+  // Non serve controllare i placeholder, sono stati inseriti i valori
+  
   try {
-    const snap = await uploadBytes(ref, f);
-    const url = await getDownloadURL(snap.ref);
+    // 1. Prepara i dati per Cloudinary
+    const formData = new FormData();
+    formData.append('file', f);
+    formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+    // Specifica la cartella e il Public ID (usiamo l'userId per sovrascrivere l'immagine precedente)
+    formData.append('folder', 'gestionale_users');
+    formData.append('public_id', currentUser.userId); 
 
-    // update firestore user doc
+    // 2. Upload su Cloudinary
+    const response = await fetch(CLOUDINARY_URL, {
+      method: 'POST',
+      body: formData
+    });
+    
+    if(!response.ok){
+      const errData = await response.json();
+      console.error('Cloudinary Upload Error:', errData);
+      throw new Error(`Upload fallito: ${errData.error?.message || response.statusText}`);
+    }
+
+    const data = await response.json();
+    const url = data.secure_url;
+
+    // 3. Update firestore user doc
     // Questo salva l'URL in modo permanente sul profilo Firestore
     const uRef = doc(db, 'users', currentUser.userId);
     await updateDoc(uRef, { photoURL: url, lastSeen: serverTimestamp() });
 
-    // update UI
+    // 4. Update UI
     avatarDisplay.innerHTML = `<img src="${url}" alt="avatar">`;
     avatarPreviewLogin.style.backgroundImage = `url(${url})`;
     avatarPreviewLogin.style.backgroundSize = 'cover';
     alert('Immagine profilo aggiornata!');
   } catch(err){
     console.error('upload error', err);
-    alert('Errore durante l\'upload. Controlla la console.');
+    alert(`Errore durante l'upload. Controlla la console. Dettaglio: ${err.message}`);
   } finally {
     // Reset input file per permettere un nuovo upload dello stesso file
     ev.target.value = '';
@@ -443,7 +472,7 @@ async function addSimpleDoc(collectionName, data){
 }
 
 /* ============================
-   LOAD LOGS + TOTALS
+   LOAD LOGS + TOTALS (Richiede Indici Firestore)
    ============================ */
 async function loadLogs(){
   if(!currentUser) return;
@@ -453,6 +482,7 @@ async function loadLogs(){
 
   // entries
   try {
+    // Query per entrate: richiede indice composito (userId ASC, createdAt DESC)
     const qE = query(collection(db, 'entries'), where('userId','==',currentUser.userId), orderBy('createdAt','desc'));
     const snapE = await getDocs(qE);
     let totE = 0;
@@ -464,6 +494,7 @@ async function loadLogs(){
       logEntrate.appendChild(li);
     });
 
+    // Query per uscite: richiede indice composito (userId ASC, createdAt DESC)
     const qU = query(collection(db, 'exits'), where('userId','==',currentUser.userId), orderBy('createdAt','desc'));
     const snapU = await getDocs(qU);
     let totU = 0;
@@ -478,6 +509,9 @@ async function loadLogs(){
     saldoTotale.textContent = `Entrate: €${totE.toFixed(2)} — Uscite: €${totU.toFixed(2)} — Saldo: €${(totE - totU).toFixed(2)}`;
   } catch(err){
     console.error('loadLogs', err);
+    if(err.code === 'failed-precondition' && err.message.includes('requires an index')){
+        saldoTotale.textContent = 'ERRORE: La query richiede un indice in Firebase. Controlla la console per il link.';
+    }
   }
 }
 
@@ -491,6 +525,7 @@ async function getTotalForRange(collectionName, userId, startDate, endDate){
     where('createdAt','>=', Timestamp.fromDate(startDate)),
     where('createdAt','<', Timestamp.fromDate(endDate))
   );
+  // Anche qui, potrebbe servire un indice composito: userId (ASC), createdAt (ASC)
   const snap = await getDocs(q);
   let total = 0;
   snap.forEach(d => total += Number(d.data().importo || 0));
@@ -571,15 +606,6 @@ function scheduleMonthlyAuto(){
     scheduleMonthlyAuto();
   }, ms);
 }
-
-/* ============================
-   HELPER: schedule a repeated UI refresh for users presence states
-   (so that online statuses toggle as time passes)
-   ============================ */
-setInterval(()=> {
-  // we leave the realtime listener to keep updating; here we might trigger minor UI updates via re-calc,
-  // but onSnapshot already updates 'lastSeen' changes; so nothing required here.
-}, 30_000);
 
 /* ============================
    UTILITY: show profile area for current user on init
