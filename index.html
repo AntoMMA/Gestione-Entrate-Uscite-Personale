@@ -3,20 +3,14 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Gestionale Entrate/Uscite — Green Delivery</title>
+  <title>Gestionale Entrate/Uscite</title>
 
-  <!-- Style -->
   <link rel="stylesheet" href="style.css">
 
-  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
 
-  <!-- =========================
-       LOGIN A TUTTO SCHERMO
-       (visibile SOLO prima del login)
-  ========================== -->
   <div id="login-screen" aria-hidden="false">
     <div id="login-frame" class="rgb-frame">
       <div id="login-card" class="rgb-card">
@@ -35,21 +29,16 @@
         <p class="small muted">L'accesso memorizza localmente il profilo (puoi usare qualsiasi numero)</p>
       </div>
 
-      <!-- RGB glitch/distort pseudo layers (visive) -->
       <div class="rgb-distort rgb-layer"></div>
       <div class="rgb-glow rgb-layer"></div>
     </div>
   </div>
 
-  <!-- =========================
-       APP (NASCOSTA FINCHÉ NON SI FA LOGIN)
-  ========================== -->
   <div id="app" class="hidden" aria-hidden="true">
 
     <header id="topbar">
       <div class="brand">
-        <div class="brand-rgb"></div>
-        <h2>Green Delivery — Gestionale</h2>
+        <h2>Gestionale Entrate/Uscite</h2>
       </div>
 
       <div class="top-actions">
@@ -58,13 +47,11 @@
     </header>
 
     <div id="container">
-      <!-- SIDEBAR: Utenti online/offline -->
       <aside id="sidebar">
         <h3>Utenti</h3>
         <ul id="users-list" class="users-list"></ul>
       </aside>
 
-      <!-- MAIN -->
       <main id="main-content">
 
         <section id="profile-section" class="card">
@@ -92,14 +79,14 @@
             <h4>Aggiungi Entrata</h4>
             <input id="entrata-importo" type="number" placeholder="Importo €">
             <input id="entrata-motivo" type="text" placeholder="Motivo">
-            <button id="add-entrata">Aggiungi Entrata</button>
+            <button id="add-entrata" class="btn-primary">Aggiungi Entrata</button>
           </div>
 
           <div class="box-in">
             <h4>Aggiungi Uscita</h4>
             <input id="uscita-importo" type="number" placeholder="Importo €">
             <input id="uscita-motivo" type="text" placeholder="Motivo">
-            <button id="add-uscita">Aggiungi Uscita</button>
+            <button id="add-uscita" class="btn-primary">Aggiungi Uscita</button>
           </div>
         </section>
 
@@ -112,7 +99,7 @@
           <div class="report-header">
             <h3>Resoconto Mensile</h3>
             <div class="report-controls">
-              <button id="monthly-report-btn">Genera resoconto</button>
+              <button id="monthly-report-btn" class="btn-primary">Genera resoconto</button>
               <button id="auto-report-toggle" class="btn-ghost">Auto: ON</button>
             </div>
           </div>
@@ -137,12 +124,11 @@
 
     <footer id="app-footer">
       <div class="footer-rgb"></div>
-      <small>Green Delivery • Gestionale</small>
+      <small>Gestionale Entrate/Uscite</small>
     </footer>
 
   </div>
 
-  <!-- Script principale (module) -->
   <script type="module" src="script.js"></script>
 </body>
 </html>
