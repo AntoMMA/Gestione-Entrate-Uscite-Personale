@@ -1,673 +1,877 @@
-// script.js (module completo)
+/* =========================================================
+   GESTIONALE ENTRATE/USCITE
+   Firebase Firestore + Cloudinary (upload unsigned)
+   ========================================================= */
 
-/* ============================
-   IMPORT FIREBASE (modular)
-   ============================ */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.5.2/firebase-app.js";
 import {
-  getFirestore, collection, doc, setDoc, updateDoc, getDoc, getDocs,
-  query, where, orderBy, serverTimestamp, onSnapshot, Timestamp
+  getFirestore,
+  collection,
+  doc,
+  setDoc,
+  updateDoc,
+  getDoc,
+  getDocs,
+  addDoc,
+  query,
+  where,
+  orderBy,
+  serverTimestamp,
+  onSnapshot,
+  Timestamp
 } from "https://www.gstatic.com/firebasejs/10.5.2/firebase-firestore.js";
 
-// Rimossa l'importazione di Firebase Storage per passare a Cloudinary
+/* =========================================================
+   CONFIGURAZIONE
+   ========================================================= */
 
-/* ============================
-   FIREBASE CONFIG — usa la tua config (già presente)
-   ============================ */
+// Mantieni qui la configurazione del tuo progetto Firebase.
 const firebaseConfig = {
   apiKey: "AIzaSyDA8x2UcwoDBNbEZbsE5nGUNlLHI-aXUHA",
   authDomain: "gestionale-entrate-uscite-wr.firebaseapp.com",
   projectId: "gestionale-entrate-uscite-wr",
   storageBucket: "gestionale-entrate-uscite-wr.firebasestorage.app",
   messagingSenderId: "180959843310",
-  appId: "1:180959843310:web:0800ebae9267f61071b4ff",
+  appId: "1:180959843310:web:0800ebae9267f61071b4ff"
 };
 
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-// const storage = getStorage(app); // Rimosso l'inizializzazione di Firebase Storage
-
-/* ============================
-   CLOUDIDARY CONFIG
-   ============================ */
-const CLOUDINARY_CLOUD_NAME = "dzgynfn7t"; 
-const CLOUDINARY_UPLOAD_PRESET = "gestionale_personale"; // Presuppone il preset Unsigned
-const CLOUDINARY_API_KEY = "144428837591683"; 
-const CLOUDINARY_API_SECRET = "FOGy91qWzpp2Iyj5YT1q1AQUJ9o"; 
+const CLOUDINARY_CLOUD_NAME = "dzgynfn7t";
+const CLOUDINARY_UPLOAD_PRESET = "gestionale_personale"; // Preset unsigned
 const CLOUDINARY_URL = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`;
+const MAX_PROFILE_IMAGE_SIZE = 4 * 1024 * 1024;
+const PRESENCE_INTERVAL_MS = 20_000;
+const ONLINE_THRESHOLD_MS = 45_000;
+const LOG_REFRESH_INTERVAL_MS = 20_000;
 
+const firebaseApp = initializeApp(firebaseConfig);
+const db = getFirestore(firebaseApp);
 
-/* ============================
-   DOM REFERENCES
-   ============================ */
-const loginScreen = document.getElementById('login-screen');
-const loginBtn = document.getElementById('login-btn');
-const nomeInput = document.getElementById('nome');
-const cognomeInput = document.getElementById('cognome');
-const telefonoInput = document.getElementById('telefono');
+/* =========================================================
+   ELEMENTI DOM
+   ========================================================= */
+const $ = (selector) => document.querySelector(selector);
 
-const appDiv = document.getElementById('app');
-const logoutBtn = document.getElementById('logout-btn');
+const loginScreen = $("#login-screen");
+const loginForm = $("#login-form");
+const loginBtn = $("#login-btn");
+const nomeInput = $("#nome");
+const cognomeInput = $("#cognome");
+const telefonoInput = $("#telefono");
+const avatarPreviewLogin = $("#avatar-preview-login");
 
-const usersList = document.getElementById('users-list');
-const avatarPreviewLogin = document.getElementById('avatar-preview-login');
+const appDiv = $("#app");
+const logoutBtn = $("#logout-btn");
+const usersList = $("#users-list");
 
-const profileName = document.getElementById('profile-name');
-const profilePhone = document.getElementById('profile-phone');
-const avatarDisplay = document.getElementById('avatar-display');
-const profileFileInput = document.getElementById('profile-file');
-const removeProfileBtn = document.getElementById('remove-profile-btn'); // Aggiunto riferimento DOM
+const profileName = $("#profile-name");
+const profilePhone = $("#profile-phone");
+const avatarDisplay = $("#avatar-display");
+const profileFileInput = $("#profile-file");
+const removeProfileBtn = $("#remove-profile-btn");
+const profileUploadLabel = profileFileInput?.closest("label");
 
-const entrataImporto = document.getElementById('entrata-importo');
-const entrataMotivo = document.getElementById('entrata-motivo');
-const uscitaImporto = document.getElementById('uscita-importo');
-const uscitaMotivo = document.getElementById('uscita-motivo');
+const entrataImporto = $("#entrata-importo");
+const entrataMotivo = $("#entrata-motivo");
+const uscitaImporto = $("#uscita-importo");
+const uscitaMotivo = $("#uscita-motivo");
+const addEntrataBtn = $("#add-entrata");
+const addUscitaBtn = $("#add-uscita");
 
-const addEntrataBtn = document.getElementById('add-entrata');
-const addUscitaBtn = document.getElementById('add-uscita');
+const logEntrate = $("#log-entrate");
+const logUscite = $("#log-uscite");
+const saldoTotale = $("#saldo-totale");
 
-const logEntrate = document.getElementById('log-entrate');
-const logUscite = document.getElementById('log-uscite');
+const monthlyBtn = $("#monthly-report-btn");
+const autoToggle = $("#auto-report-toggle");
+const monthlySummary = $("#monthly-summary");
+const monthlyCanvas = $("#monthlyChart");
 
-const saldoTotale = document.getElementById('saldo-totale');
-
-const monthlyBtn = document.getElementById('monthly-report-btn');
-const autoToggle = document.getElementById('auto-report-toggle');
-const monthlySummary = document.getElementById('monthly-summary');
-const monthlyCanvas = document.getElementById('monthlyChart').getContext('2d');
-
-/* ============================
-   STATE
-   ============================ */
-let currentUser = null; // { nome, cognome, telefono, userId }
+/* =========================================================
+   STATO APPLICAZIONE
+   ========================================================= */
+let currentUser = null;
 let usersUnsub = null;
 let monthlyChart = null;
 let autoReportEnabled = true;
 let presenceIntervalHandle = null;
+let logRefreshIntervalHandle = null;
+let monthlyTimeoutHandle = null;
+let isOpeningApp = false;
 
-/* ============================
-   UTIL: crea userId semplice ma consistente
-   ============================ */
-function makeUserId(nome, cognome, telefono){
-  const cleanTel = (telefono || '').toString().replace(/\D/g,'');
-  return `${nome.trim().toLowerCase()}_${cognome.trim().toLowerCase()}_${cleanTel}`.replace(/\s+/g,'_');
+/* =========================================================
+   UTILITÀ GENERALI
+   ========================================================= */
+function formatCurrency(value) {
+  return new Intl.NumberFormat("it-IT", {
+    style: "currency",
+    currency: "EUR"
+  }).format(Number(value) || 0);
 }
 
-/* ============================
-   PRESENCE: aggiorna lastSeen su users/{userId}
-   ============================ */
-async function setPresencePing(userId){
-  if(!userId) return;
-  // usa setDoc per creare/aggiornare il documento
-  const userDocRef = doc(db, 'users', userId);
-  try {
-    await setDoc(userDocRef, {
-      lastSeen: serverTimestamp(),
-    }, { merge: true });
-  } catch(err){
-    console.error('Errore setPresencePing', err);
+function setButtonLoading(button, isLoading, loadingText = "Attendi...") {
+  if (!button) return;
+
+  if (isLoading) {
+    if (!button.dataset.originalText) {
+      button.dataset.originalText = button.textContent;
+    }
+    button.disabled = true;
+    button.textContent = loadingText;
+  } else {
+    button.disabled = false;
+    if (button.dataset.originalText) {
+      button.textContent = button.dataset.originalText;
+      delete button.dataset.originalText;
+    }
   }
 }
 
-/* avvia ping ogni 20 secondi (mentre app aperta) */
-function startPresence(userId){
-  // prima call immediata
+function showError(message, error) {
+  console.error(message, error);
+  alert(message);
+}
+
+function makeUserId(nome, cognome, telefono) {
+  const cleanName = String(nome || "").trim().toLowerCase().replace(/\s+/g, "_");
+  const cleanSurname = String(cognome || "").trim().toLowerCase().replace(/\s+/g, "_");
+  const cleanPhone = String(telefono || "").replace(/\D/g, "");
+
+  // Evita che caratteri riservati creino segmenti inattesi nel percorso Firestore.
+  const safeName = cleanName.replace(/[\/?#[\]]/g, "_");
+  const safeSurname = cleanSurname.replace(/[\/?#[\]]/g, "_");
+  return `${safeName}_${safeSurname}_${cleanPhone}`;
+}
+
+function isValidSavedUser(user) {
+  return Boolean(
+    user &&
+    typeof user.nome === "string" && user.nome.trim() &&
+    typeof user.cognome === "string" && user.cognome.trim() &&
+    typeof user.telefono === "string" && user.telefono.trim() &&
+    typeof user.userId === "string" && user.userId.trim()
+  );
+}
+
+function normalizeTimestamp(timestamp) {
+  if (!timestamp) return null;
+  if (typeof timestamp.toDate === "function") return timestamp.toDate();
+  if (timestamp instanceof Date) return timestamp;
+
+  const parsed = new Date(timestamp);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function isOnline(lastSeen) {
+  const date = normalizeTimestamp(lastSeen);
+  if (!date) return false;
+  const difference = Date.now() - date.getTime();
+  return difference >= 0 && difference <= ONLINE_THRESHOLD_MS;
+}
+
+function createAvatar(container, photoURL, name, className = "") {
+  if (!container) return;
+  container.replaceChildren();
+
+  if (photoURL) {
+    const image = document.createElement("img");
+    image.src = photoURL;
+    image.alt = "Immagine profilo";
+    image.loading = "lazy";
+    image.referrerPolicy = "no-referrer";
+    image.onerror = () => {
+      container.replaceChildren();
+      container.textContent = (name || "?").trim().charAt(0).toUpperCase() || "?";
+      if (className) container.classList.add(className);
+    };
+    container.appendChild(image);
+    return;
+  }
+
+  container.textContent = (name || "?").trim().charAt(0).toUpperCase() || "?";
+  if (className) container.classList.add(className);
+}
+
+function setProfileControls(isCurrentUser, hasPhoto) {
+  if (profileFileInput) profileFileInput.disabled = !isCurrentUser;
+  if (profileUploadLabel) profileUploadLabel.hidden = !isCurrentUser;
+  if (removeProfileBtn) {
+    removeProfileBtn.hidden = !(isCurrentUser && hasPhoto);
+  }
+}
+
+/* =========================================================
+   PRESENZA UTENTI
+   ========================================================= */
+async function setPresencePing(userId) {
+  if (!userId) return;
+
+  try {
+    await setDoc(doc(db, "users", userId), {
+      lastSeen: serverTimestamp()
+    }, { merge: true });
+  } catch (error) {
+    console.error("Errore durante l'aggiornamento della presenza:", error);
+  }
+}
+
+function startPresence(userId) {
+  stopPresence();
   setPresencePing(userId);
-  if(presenceIntervalHandle) clearInterval(presenceIntervalHandle);
-  presenceIntervalHandle = setInterval(()=> setPresencePing(userId), 20_000);
+  presenceIntervalHandle = window.setInterval(() => {
+    setPresencePing(userId);
+  }, PRESENCE_INTERVAL_MS);
 }
 
-/* ferma ping */
-function stopPresence(){
-  if(presenceIntervalHandle) clearInterval(presenceIntervalHandle);
-  presenceIntervalHandle = null;
+function stopPresence() {
+  if (presenceIntervalHandle !== null) {
+    window.clearInterval(presenceIntervalHandle);
+    presenceIntervalHandle = null;
+  }
 }
 
-/* ============================
-   LOGIN
-   ============================ */
-loginBtn.addEventListener('click', async () => {
+/* =========================================================
+   LOGIN E APERTURA APPLICAZIONE
+   ========================================================= */
+loginForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (isOpeningApp) return;
+
   const nome = nomeInput.value.trim();
   const cognome = cognomeInput.value.trim();
   const telefono = telefonoInput.value.trim();
-  if(!nome || !cognome || !telefono){ alert('Compila tutti i campi'); return; }
 
-  const userId = makeUserId(nome,cognome,telefono);
-  currentUser = { nome, cognome, telefono, userId };
+  if (!nome || !cognome || !telefono) {
+    alert("Compila tutti i campi.");
+    return;
+  }
 
-  // salva locale
-  localStorage.setItem('gd_user', JSON.stringify(currentUser));
+  const userId = makeUserId(nome, cognome, telefono);
+  if (!userId || userId.endsWith("_")) {
+    alert("Controlla i dati inseriti e riprova.");
+    return;
+  }
 
-  // crea/aggiorna doc utente in firestore con campi base
-  const uRef = doc(db, 'users', userId);
-  await setDoc(uRef, {
-    nome, cognome, telefono,
-    userId,
-    lastSeen: serverTimestamp(),
-  }, { merge: true });
+  const user = { nome, cognome, telefono, userId };
+  setButtonLoading(loginBtn, true, "Accesso...");
 
-  openApp();
+  try {
+    await setDoc(doc(db, "users", userId), {
+      ...user,
+      lastSeen: serverTimestamp()
+    }, { merge: true });
+
+    localStorage.setItem("gd_user", JSON.stringify(user));
+    currentUser = user;
+    await openApp();
+  } catch (error) {
+    showError("Non è stato possibile accedere. Controlla la connessione e le regole di accesso a Firebase.", error);
+  } finally {
+    setButtonLoading(loginBtn, false);
+  }
 });
 
-/* auto-login se presente */
-const saved = localStorage.getItem('gd_user');
-if(saved){
+async function restoreSavedSession() {
+  const saved = localStorage.getItem("gd_user");
+  if (!saved) return;
+
   try {
-    currentUser = JSON.parse(saved);
-    // refresh presence doc to ensure exists
-    (async ()=>{
-      const uRef = doc(db, 'users', currentUser.userId);
-      await setDoc(uRef, {
-        nome: currentUser.nome,
-        cognome: currentUser.cognome,
-        telefono: currentUser.telefono,
-        userId: currentUser.userId,
-        lastSeen: serverTimestamp()
-      }, { merge: true });
-      openApp();
-    })();
-  } catch(e){}
+    const user = JSON.parse(saved);
+    if (!isValidSavedUser(user)) {
+      localStorage.removeItem("gd_user");
+      return;
+    }
+
+    currentUser = user;
+    await setDoc(doc(db, "users", user.userId), {
+      nome: user.nome,
+      cognome: user.cognome,
+      telefono: user.telefono,
+      userId: user.userId,
+      lastSeen: serverTimestamp()
+    }, { merge: true });
+
+    await openApp();
+  } catch (error) {
+    console.error("Ripristino sessione non riuscito:", error);
+    currentUser = null;
+    localStorage.removeItem("gd_user");
+  }
 }
 
-/* mostra applicazione */
-async function openApp(){
-  // hide login
-  loginScreen.classList.add('hidden');
-  loginScreen.setAttribute('aria-hidden','true');
+async function openApp() {
+  if (!currentUser || isOpeningApp) return;
+  isOpeningApp = true;
 
-  // show app
-  appDiv.classList.remove('hidden');
-  appDiv.setAttribute('aria-hidden','false');
+  loginScreen.classList.add("hidden");
+  loginScreen.setAttribute("aria-hidden", "true");
+  appDiv.classList.remove("hidden");
+  appDiv.setAttribute("aria-hidden", "false");
 
-  // set UI profile
   profileName.textContent = `${currentUser.nome} ${currentUser.cognome}`;
   profilePhone.textContent = currentUser.telefono;
 
-  // start presence ping
   startPresence(currentUser.userId);
-
-  // subscribe to users list
   subscribeUsersList();
+  startLogRefresh();
 
-  // load profile image if present
-  loadUserProfilePhoto(currentUser.userId);
-
-  // load logs and totals
-  loadLogs();
-
-  // generate first monthly report
-  await generateMonthlyReport();
-
-  // schedule next automatic monthly-run (and keep monthly auto on/off via toggle)
-  scheduleMonthlyAuto();
+  try {
+    await Promise.allSettled([
+      loadUserProfilePhoto(currentUser.userId),
+      loadLogs(),
+      generateMonthlyReport()
+    ]);
+  } finally {
+    scheduleMonthlyAuto();
+    isOpeningApp = false;
+  }
 }
 
-/* ============================
-   LOGOUT
-   ============================ */
-logoutBtn.addEventListener('click', async () => {
-  // optional: set lastSeen far in past? We'll just stop ping and clear local
-  stopPresence();
+/* =========================================================
+   LOGOUT E PULIZIA
+   ========================================================= */
+logoutBtn?.addEventListener("click", logout);
 
-  // remove local
-  localStorage.removeItem('gd_user');
+function logout() {
+  stopPresence();
+  stopLogRefresh();
+  stopMonthlyAuto();
+
+  if (typeof usersUnsub === "function") {
+    usersUnsub();
+    usersUnsub = null;
+  }
+
+  localStorage.removeItem("gd_user");
   currentUser = null;
 
-  // unsubscribe users list
-  if(usersUnsub) usersUnsub();
+  appDiv.classList.add("hidden");
+  appDiv.setAttribute("aria-hidden", "true");
+  loginScreen.classList.remove("hidden");
+  loginScreen.setAttribute("aria-hidden", "false");
 
-  // hide app show login
-  appDiv.classList.add('hidden');
-  appDiv.setAttribute('aria-hidden','true');
-  loginScreen.classList.remove('hidden');
-  loginScreen.setAttribute('aria-hidden','false');
+  usersList.replaceChildren();
+  logEntrate.replaceChildren();
+  logUscite.replaceChildren();
+  saldoTotale.textContent = "";
+  monthlySummary.textContent = "";
+  profileName.textContent = "";
+  profilePhone.textContent = "";
+  avatarDisplay.replaceChildren();
+  avatarPreviewLogin.style.backgroundImage = "none";
+  setProfileControls(true, false);
 
-  // clear UI small bits
-  usersList.innerHTML = '';
-  logEntrate.innerHTML = '';
-  logUscite.innerHTML = '';
-  saldoTotale.textContent = '';
-  monthlySummary.textContent = '';
-  if(monthlyChart) { monthlyChart.destroy(); monthlyChart = null; }
-});
+  if (monthlyChart) {
+    monthlyChart.destroy();
+    monthlyChart = null;
+  }
+}
 
-/* ============================
-   SUBSCRIBE USERS LIST (realtime)
-   ============================ */
-function subscribeUsersList(){
-  // unsub if exists
-  if(usersUnsub) usersUnsub();
+/* =========================================================
+   ELENCO UTENTI IN TEMPO REALE
+   ========================================================= */
+function subscribeUsersList() {
+  if (typeof usersUnsub === "function") usersUnsub();
 
-  const usersColl = collection(db, 'users');
-  // listen to all users ordered by name (client-side we'll compute online)
-  usersUnsub = onSnapshot(usersColl, snapshot => {
-    usersList.innerHTML = '';
-    snapshot.forEach(docSnap => {
-      const d = docSnap.data();
-      const li = document.createElement('li');
-
-      // avatar
-      const aDiv = document.createElement('div');
-      aDiv.className = 'user-avatar';
-      if(d.photoURL){
-        const img = document.createElement('img');
-        img.src = d.photoURL;
-        img.style.width='100%';
-        img.style.height='100%';
-        img.style.objectFit = 'cover';
-        aDiv.appendChild(img);
-      } else {
-        // initials
-        const initials = document.createElement('div');
-        initials.style.width='100%'; initials.style.height='100%';
-        initials.style.display='flex'; initials.style.alignItems='center'; initials.style.justifyContent='center';
-        initials.style.color='#fff'; initials.style.fontWeight='700';
-        const name = `${d.nome || ''}`.trim();
-        initials.textContent = name ? name.charAt(0).toUpperCase() : '?';
-        aDiv.appendChild(initials);
-      }
-
-      // meta
-      const meta = document.createElement('div');
-      meta.className = 'user-meta';
-      const nameEl = document.createElement('div');
-      nameEl.className = 'user-name';
-      nameEl.textContent = `${d.nome || '—'} ${d.cognome || ''}`;
-      const statusEl = document.createElement('div');
-      statusEl.className = 'user-status';
-
-      // online: if lastSeen within 15 seconds
-      let statusDot = document.createElement('span');
-      statusDot.className = 'status-dot ' + (isOnline(d.lastSeen) ? 'status-online' : 'status-offline');
-
-      // text
-      const statusText = document.createElement('span');
-      statusText.textContent = isOnline(d.lastSeen) ? 'online' : 'offline';
-
-      statusEl.appendChild(statusDot);
-      statusEl.appendChild(statusText);
-
-      meta.appendChild(nameEl);
-      meta.appendChild(statusEl);
-
-      // allow click to view profile: if clicked show profile details in main profile (but only owner can change photo)
-      li.appendChild(aDiv);
-      li.appendChild(meta);
-      li.style.cursor = 'pointer';
-      li.addEventListener('click', () => {
-        // show clicked user's profile in the profile area (read-only except if it's currentUser)
-        showProfileInMain(d);
+  usersUnsub = onSnapshot(collection(db, "users"), (snapshot) => {
+    const users = snapshot.docs
+      .map((documentSnapshot) => documentSnapshot.data())
+      .filter((user) => user && user.userId)
+      .sort((a, b) => {
+        const nameA = `${a.nome || ""} ${a.cognome || ""}`.trim();
+        const nameB = `${b.nome || ""} ${b.cognome || ""}`.trim();
+        return nameA.localeCompare(nameB, "it");
       });
 
-      usersList.appendChild(li);
+    const fragment = document.createDocumentFragment();
+
+    users.forEach((user) => {
+      const item = document.createElement("li");
+      item.tabIndex = 0;
+      item.setAttribute("role", "button");
+      item.setAttribute("aria-label", `Visualizza il profilo di ${user.nome || "utente"} ${user.cognome || ""}`);
+
+      const avatar = document.createElement("div");
+      avatar.className = "user-avatar";
+      createAvatar(avatar, user.photoURL, user.nome);
+
+      const meta = document.createElement("div");
+      meta.className = "user-meta";
+
+      const name = document.createElement("div");
+      name.className = "user-name";
+      name.textContent = `${user.nome || "—"} ${user.cognome || ""}`.trim();
+
+      const status = document.createElement("div");
+      status.className = "user-status";
+
+      const online = isOnline(user.lastSeen);
+      const dot = document.createElement("span");
+      dot.className = `status-dot ${online ? "status-online" : "status-offline"}`;
+      dot.setAttribute("aria-hidden", "true");
+
+      const statusText = document.createElement("span");
+      statusText.textContent = online ? "online" : "offline";
+
+      status.append(dot, statusText);
+      meta.append(name, status);
+      item.append(avatar, meta);
+
+      const openSelectedProfile = () => showProfileInMain(user);
+      item.addEventListener("click", openSelectedProfile);
+      item.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          openSelectedProfile();
+        }
+      });
+
+      fragment.appendChild(item);
     });
-  }, err => {
-    console.error('users onSnapshot error', err);
+
+    usersList.replaceChildren(fragment);
+  }, (error) => {
+    console.error("Errore aggiornamento elenco utenti:", error);
   });
 }
 
-/* helper online detection */
-function isOnline(ts){
-  if(!ts) return false;
-  // ts may be Firestore Timestamp or JS Date — normalize
-  let last;
-  if(ts.toDate) last = ts.toDate();
-  else last = new Date(ts);
-  const diff = Date.now() - last.getTime();
-  return diff <= 15_000; // online if within 15s
+/* =========================================================
+   VISUALIZZAZIONE PROFILO
+   ========================================================= */
+function showProfileInMain(userData) {
+  if (!userData) return;
+
+  profileName.textContent = `${userData.nome || ""} ${userData.cognome || ""}`.trim();
+  profilePhone.textContent = userData.telefono || "";
+  createAvatar(avatarDisplay, userData.photoURL, userData.nome);
+
+  const isCurrentUser = Boolean(currentUser && userData.userId === currentUser.userId);
+  setProfileControls(isCurrentUser, Boolean(userData.photoURL));
 }
 
-/* show profile in main-profile area */
-function showProfileInMain(userDocData){
-  // update profile area
-  profileName.textContent = `${userDocData.nome || ''} ${userDocData.cognome || ''}`;
-  profilePhone.textContent = userDocData.telefono || '';
+async function loadUserProfilePhoto(userId) {
+  if (!userId) return;
 
-  // avatar
-  if(userDocData.photoURL){
-    avatarDisplay.innerHTML = `<img src="${userDocData.photoURL}" alt="avatar">`;
-  } else {
-    avatarDisplay.innerHTML = `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:32px;">${(userDocData.nome||'')[0]||'?'}</div>`;
-  }
-
-  const isCurrentUser = currentUser && userDocData.userId === currentUser.userId;
-  const uploadButtonLabel = profileFileInput.closest('label');
-  
-  // Gestione visibilità/disponibilità input file e pulsante rimozione
-  if(!isCurrentUser){
-    profileFileInput.disabled = true;
-    profileFileInput.style.opacity = 0.5;
-    if(uploadButtonLabel) uploadButtonLabel.style.display = 'none';
-    if(removeProfileBtn) removeProfileBtn.style.display = 'none';
-  } else {
-    profileFileInput.disabled = false;
-    profileFileInput.style.opacity = 1;
-    if(uploadButtonLabel) uploadButtonLabel.style.display = 'inline-block';
-    // Mostra Rimuovi solo se c'è un'immagine
-    if(removeProfileBtn) removeProfileBtn.style.display = userDocData.photoURL ? 'inline-block' : 'none';
-  }
-}
-
-/* ============================
-   LOAD USER PROFILE PHOTO (for current user)
-   ============================ */
-async function loadUserProfilePhoto(userId){
   try {
-    const uRef = doc(db, 'users', userId);
-    const uSnap = await getDoc(uRef);
-    if(uSnap.exists()){
-      const d = uSnap.data();
-      if(d.photoURL){
-        avatarDisplay.innerHTML = `<img src="${d.photoURL}" alt="avatar">`;
-        avatarPreviewLogin.style.backgroundImage = `url(${d.photoURL})`;
-        avatarPreviewLogin.style.backgroundSize = 'cover';
-        if(removeProfileBtn) removeProfileBtn.style.display = 'inline-block';
-      } else {
-        avatarDisplay.innerHTML = '';
-        avatarPreviewLogin.style.backgroundImage = 'none';
-        if(removeProfileBtn) removeProfileBtn.style.display = 'none';
-      }
+    const userSnapshot = await getDoc(doc(db, "users", userId));
+    if (!userSnapshot.exists()) return;
+
+    const userData = userSnapshot.data();
+    showProfileInMain(userData);
+
+    if (userData.photoURL) {
+      avatarPreviewLogin.style.backgroundImage = `url("${String(userData.photoURL).replace(/["\\]/g, "")}")`;
+    } else {
+      avatarPreviewLogin.style.backgroundImage = "none";
     }
-  } catch(err){
-    console.error('loadUserProfilePhoto', err);
+  } catch (error) {
+    console.error("Errore caricamento immagine profilo:", error);
   }
 }
 
-/* ============================
-   UPLOAD PROFILE IMAGE (USANDO CLOUDINARY - UNSIGNED)
-   ============================ */
-profileFileInput?.addEventListener('change', async (ev) => {
-  if(!currentUser) return alert('Effettua login prima.');
-  const f = ev.target.files[0];
-  if(!f) return;
-  
-  if(f.size > 4 * 1024 * 1024) { alert('File troppo grande (max 4MB)'); return; }
-  
-  try {
-    // 1. Prepara i dati per Cloudinary
-    const formData = new FormData();
-    formData.append('file', f);
-    formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
-    formData.append('folder', 'gestionale_users');
-    formData.append('public_id', currentUser.userId); // Sovrascrive automaticamente l'immagine precedente
+/* =========================================================
+   CARICAMENTO IMMAGINE PROFILO SU CLOUDINARY
+   ========================================================= */
+profileFileInput?.addEventListener("change", async (event) => {
+  if (!currentUser) {
+    alert("Effettua prima l'accesso.");
+    return;
+  }
 
-    // 2. Upload su Cloudinary (Unsigned upload)
+  const file = event.target.files?.[0];
+  if (!file) return;
+
+  if (!file.type.startsWith("image/")) {
+    alert("Seleziona un file immagine valido.");
+    event.target.value = "";
+    return;
+  }
+
+  if (file.size > MAX_PROFILE_IMAGE_SIZE) {
+    alert("File troppo grande. La dimensione massima consentita è 4 MB.");
+    event.target.value = "";
+    return;
+  }
+
+  if (profileFileInput.disabled) {
+    event.target.value = "";
+    return;
+  }
+
+  const uploadButton = profileUploadLabel;
+  if (uploadButton) uploadButton.style.pointerEvents = "none";
+
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+    formData.append("folder", "gestionale_users");
+    formData.append("public_id", currentUser.userId);
+
     const response = await fetch(CLOUDINARY_URL, {
-      method: 'POST',
+      method: "POST",
       body: formData
     });
-    
-    if(!response.ok){
-      const errData = await response.json();
-      console.error('Cloudinary Upload Error:', errData);
-      throw new Error(`Upload fallito: ${errData.error?.message || response.statusText}. Controlla che il preset sia 'Unsigned'.`);
+
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(result.error?.message || `Errore Cloudinary (${response.status}).`);
     }
 
-    const data = await response.json();
-    const url = data.secure_url;
+    if (!result.secure_url) {
+      throw new Error("Cloudinary non ha restituito un URL sicuro per l'immagine.");
+    }
 
-    // 3. Update firestore user doc
-    const uRef = doc(db, 'users', currentUser.userId);
-    await updateDoc(uRef, { photoURL: url, lastSeen: serverTimestamp() });
+    await updateDoc(doc(db, "users", currentUser.userId), {
+      photoURL: result.secure_url,
+      lastSeen: serverTimestamp()
+    });
 
-    // 4. Update UI
-    loadUserProfilePhoto(currentUser.userId);
-    alert('Immagine profilo aggiornata!');
-  } catch(err){
-    console.error('upload error', err);
-    alert(`Errore durante l'upload. Controlla la console. Dettaglio: ${err.message}`);
+    await loadUserProfilePhoto(currentUser.userId);
+    alert("Immagine profilo aggiornata.");
+  } catch (error) {
+    showError(`Errore durante il caricamento dell'immagine: ${error.message}`, error);
   } finally {
-    ev.target.value = ''; // Reset input file
+    if (uploadButton) uploadButton.style.pointerEvents = "";
+    event.target.value = "";
   }
 });
 
+/* =========================================================
+   RIMOZIONE IMMAGINE PROFILO
+   ========================================================= */
+removeProfileBtn?.addEventListener("click", async () => {
+  if (!currentUser) return;
 
-/* ============================
-   RIMUOVI IMMAGINE PROFILO (Solo rimozione da Firestore per sicurezza)
-   ============================ */
-removeProfileBtn?.addEventListener('click', async () => {
-    if(!currentUser) return;
-    if(!confirm("Sei sicuro di voler rimuovere la tua immagine profilo?")) return;
+  const confirmed = confirm("Vuoi davvero rimuovere la tua immagine profilo?");
+  if (!confirmed) return;
 
-    try {
-        // Rimuovere l'URL da Firestore (La cancellazione fisica da Cloudinary richiede l'API Secret,
-        // che non è sicuro da usare lato client per la cancellazione diretta).
-        const uRef = doc(db, 'users', currentUser.userId);
-        await updateDoc(uRef, { photoURL: null, lastSeen: serverTimestamp() });
-
-        // Aggiorna UI
-        loadUserProfilePhoto(currentUser.userId);
-        alert('Immagine profilo rimossa. Nota: Il file originale su Cloudinary è stato dereferenziato ma non cancellato per motivi di sicurezza lato client.');
-
-    } catch(err) {
-        console.error('Errore nella rimozione:', err);
-        alert('Errore durante la rimozione dell\'immagine.');
-    }
-});
-
-/* ============================
-   ENTRATE / USCITE CRUD (basic)
-   ============================ */
-addEntrataBtn.addEventListener('click', async () => {
-  if(!currentUser) return alert('Effettua login');
-  const importo = parseFloat(entrataImporto.value || 0);
-  const motivo = entrataMotivo.value || 'Entrata';
-  if(!importo || importo <= 0) return alert('Inserisci importo valido');
-  await addSimpleDoc('entries', {
-    userId: currentUser.userId,
-    importo,
-    motivo,
-    createdAt: serverTimestamp()
-  });
-  entrataImporto.value=''; entrataMotivo.value='';
-  await loadLogs();
-});
-
-addUscitaBtn.addEventListener('click', async () => {
-  if(!currentUser) return alert('Effettua login');
-  const importo = parseFloat(uscitaImporto.value || 0);
-  const motivo = uscitaMotivo.value || 'Uscita';
-  if(!importo || importo <= 0) return alert('Inserisci importo valido');
-  await addSimpleDoc('exits', {
-    userId: currentUser.userId,
-    importo,
-    motivo,
-    createdAt: serverTimestamp()
-  });
-  uscitaImporto.value=''; uscitaMotivo.value='';
-  await loadLogs();
-});
-
-/* helper add doc simple */
-async function addSimpleDoc(collectionName, data){
+  setButtonLoading(removeProfileBtn, true, "Rimozione...");
   try {
-    // create a doc id based on timestamp
-    const id = `${collectionName}_${Date.now()}_${Math.floor(Math.random()*10000)}`;
-    const dRef = doc(db, collectionName, id);
-    await setDoc(dRef, data);
-  } catch(err){
-    console.error('addSimpleDoc error', err);
-    throw err;
+    await updateDoc(doc(db, "users", currentUser.userId), {
+      photoURL: null,
+      lastSeen: serverTimestamp()
+    });
+
+    await loadUserProfilePhoto(currentUser.userId);
+    alert("Immagine profilo rimossa dal profilo.");
+  } catch (error) {
+    showError("Non è stato possibile rimuovere l'immagine profilo.", error);
+  } finally {
+    setButtonLoading(removeProfileBtn, false);
+  }
+});
+
+/* =========================================================
+   CREAZIONE ENTRATE E USCITE
+   ========================================================= */
+addEntrataBtn?.addEventListener("click", () => {
+  addTransaction("entries", entrataImporto, entrataMotivo, addEntrataBtn, "Entrata");
+});
+
+addUscitaBtn?.addEventListener("click", () => {
+  addTransaction("exits", uscitaImporto, uscitaMotivo, addUscitaBtn, "Uscita");
+});
+
+async function addTransaction(collectionName, amountInput, reasonInput, button, defaultReason) {
+  if (!currentUser) {
+    alert("Effettua prima l'accesso.");
+    return;
+  }
+
+  const amount = Number(amountInput.value);
+  const reason = reasonInput.value.trim() || defaultReason;
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    alert("Inserisci un importo valido e maggiore di zero.");
+    amountInput.focus();
+    return;
+  }
+
+  if (amount > 99_999_999) {
+    alert("L'importo inserito è troppo elevato.");
+    return;
+  }
+
+  setButtonLoading(button, true, "Salvataggio...");
+  try {
+    await addDoc(collection(db, collectionName), {
+      userId: currentUser.userId,
+      importo: amount,
+      motivo: reason,
+      createdAt: serverTimestamp()
+    });
+
+    amountInput.value = "";
+    reasonInput.value = "";
+    await loadLogs();
+    await generateMonthlyReport();
+  } catch (error) {
+    showError("Non è stato possibile salvare il movimento. Verifica la connessione e le regole Firestore.", error);
+  } finally {
+    setButtonLoading(button, false);
   }
 }
 
-/* ============================
-   LOAD LOGS + TOTALS
-   ============================ */
-async function loadLogs(){
-  if(!currentUser) return;
+/* =========================================================
+   CARICAMENTO LOG E TOTALI
+   ========================================================= */
+async function loadLogs() {
+  if (!currentUser) return;
+  const userIdAtStart = currentUser.userId;
 
-  logEntrate.innerHTML = '';
-  logUscite.innerHTML = '';
-
-  // entries
   try {
-    const qE = query(collection(db, 'entries'), where('userId','==',currentUser.userId), orderBy('createdAt','desc'));
-    const snapE = await getDocs(qE);
-    let totE = 0;
-    snapE.forEach(s => {
-      const d = s.data();
-      totE += Number(d.importo || 0);
-      const li = document.createElement('li');
-      li.textContent = `€${Number(d.importo).toFixed(2)} — ${d.motivo || ''}`;
-      logEntrate.appendChild(li);
+    const entriesQuery = query(
+      collection(db, "entries"),
+      where("userId", "==", userIdAtStart),
+      orderBy("createdAt", "desc")
+    );
+    const exitsQuery = query(
+      collection(db, "exits"),
+      where("userId", "==", userIdAtStart),
+      orderBy("createdAt", "desc")
+    );
+
+    const [entriesSnapshot, exitsSnapshot] = await Promise.all([
+      getDocs(entriesQuery),
+      getDocs(exitsQuery)
+    ]);
+
+    // Evita di mostrare dati di una sessione precedente dopo logout o cambio utente.
+    if (!currentUser || currentUser.userId !== userIdAtStart) return;
+
+    let totalEntries = 0;
+    let totalExits = 0;
+    const entriesFragment = document.createDocumentFragment();
+    const exitsFragment = document.createDocumentFragment();
+
+    entriesSnapshot.forEach((documentSnapshot) => {
+      const data = documentSnapshot.data();
+      const amount = Number(data.importo) || 0;
+      totalEntries += amount;
+      entriesFragment.appendChild(createLogItem(amount, data.motivo));
     });
 
-    const qU = query(collection(db, 'exits'), where('userId','==',currentUser.userId), orderBy('createdAt','desc'));
-    const snapU = await getDocs(qU);
-    let totU = 0;
-    snapU.forEach(s => {
-      const d = s.data();
-      totU += Number(d.importo || 0);
-      const li = document.createElement('li');
-      li.textContent = `€${Number(d.importo).toFixed(2)} — ${d.motivo || ''}`;
-      logUscite.appendChild(li);
+    exitsSnapshot.forEach((documentSnapshot) => {
+      const data = documentSnapshot.data();
+      const amount = Number(data.importo) || 0;
+      totalExits += amount;
+      exitsFragment.appendChild(createLogItem(amount, data.motivo));
     });
 
-    saldoTotale.textContent = `Entrate: €${totE.toFixed(2)} — Uscite: €${totU.toFixed(2)} — Saldo: €${(totE - totU).toFixed(2)}`;
-  } catch(err){
-    console.error('loadLogs', err);
+    logEntrate.replaceChildren(entriesFragment);
+    logUscite.replaceChildren(exitsFragment);
+
+    saldoTotale.textContent =
+      `Entrate: ${formatCurrency(totalEntries)} — ` +
+      `Uscite: ${formatCurrency(totalExits)} — ` +
+      `Saldo: ${formatCurrency(totalEntries - totalExits)}`;
+  } catch (error) {
+    console.error("Errore durante il caricamento dei movimenti:", error);
+    saldoTotale.textContent = "Impossibile caricare i totali. Controlla la connessione o gli indici Firestore.";
   }
 }
 
-/* ============================
-   MONTHLY REPORT: total for collection between dates
-   ============================ */
-async function getTotalForRange(collectionName, userId, startDate, endDate){
-  const q = query(
+function createLogItem(amount, reason) {
+  const item = document.createElement("li");
+  item.textContent = `${formatCurrency(amount)} — ${reason || ""}`;
+  return item;
+}
+
+function startLogRefresh() {
+  stopLogRefresh();
+  logRefreshIntervalHandle = window.setInterval(() => {
+    if (currentUser) loadLogs();
+  }, LOG_REFRESH_INTERVAL_MS);
+}
+
+function stopLogRefresh() {
+  if (logRefreshIntervalHandle !== null) {
+    window.clearInterval(logRefreshIntervalHandle);
+    logRefreshIntervalHandle = null;
+  }
+}
+
+/* =========================================================
+   RESOCONTO MENSILE
+   ========================================================= */
+async function getTotalForRange(collectionName, userId, startDate, endDate) {
+  const rangeQuery = query(
     collection(db, collectionName),
-    where('userId','==', userId),
-    where('createdAt','>=', Timestamp.fromDate(startDate)),
-    where('createdAt','<', Timestamp.fromDate(endDate))
+    where("userId", "==", userId),
+    where("createdAt", ">=", Timestamp.fromDate(startDate)),
+    where("createdAt", "<", Timestamp.fromDate(endDate))
   );
-  const snap = await getDocs(q);
-  let total = 0;
-  snap.forEach(d => total += Number(d.data().importo || 0));
-  return total;
+
+  const snapshot = await getDocs(rangeQuery);
+  return snapshot.docs.reduce((total, documentSnapshot) => {
+    return total + (Number(documentSnapshot.data().importo) || 0);
+  }, 0);
 }
 
-/* generate monthly report and update chart */
-async function generateMonthlyReport(){
-  if(!currentUser) return;
-  monthlySummary.textContent = 'Calcolo in corso...';
+async function generateMonthlyReport() {
+  if (!currentUser) return;
 
-  const now = new Date();
-  const startThis = new Date(now.getFullYear(), now.getMonth(), 1, 0,0,0,0);
-  const startNext = new Date(now.getFullYear(), now.getMonth()+1, 1, 0,0,0,0);
-  const startPrev = new Date(now.getFullYear(), now.getMonth()-1, 1, 0,0,0,0);
+  const userIdAtStart = currentUser.userId;
+  monthlySummary.textContent = "Calcolo in corso...";
+  setButtonLoading(monthlyBtn, true, "Calcolo...");
 
-  const thisTotal = await getTotalForRange('exits', currentUser.userId, startThis, startNext);
-  const prevTotal = await getTotalForRange('exits', currentUser.userId, startPrev, startThis);
+  try {
+    const now = new Date();
+    const startCurrentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const startPreviousMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
 
-  let pctText = '';
-  if(prevTotal === 0 && thisTotal === 0){
-    pctText = `Nessuna spesa né questo mese né il precedente.`;
-  } else if(prevTotal === 0){
-    pctText = `Nessuna spesa il mese precedente. Questo mese hai speso €${thisTotal.toFixed(2)}.`;
-  } else {
-    const diff = thisTotal - prevTotal;
-    const pct = (diff / prevTotal) * 100;
-    if(pct > 0) pctText = `Hai speso il ${pct.toFixed(1)}% in più rispetto al mese scorso (da €${prevTotal.toFixed(2)} a €${thisTotal.toFixed(2)}).`;
-    else if(pct < 0) pctText = `Hai speso il ${Math.abs(pct).toFixed(1)}% in meno rispetto al mese scorso (da €${prevTotal.toFixed(2)} a €${thisTotal.toFixed(2)}).`;
-    else pctText = `Stesso importo del mese scorso: €${thisTotal.toFixed(2)}.`;
+    const [currentTotal, previousTotal] = await Promise.all([
+      getTotalForRange("exits", userIdAtStart, startCurrentMonth, startNextMonth),
+      getTotalForRange("exits", userIdAtStart, startPreviousMonth, startCurrentMonth)
+    ]);
+
+    if (!currentUser || currentUser.userId !== userIdAtStart) return;
+
+    monthlySummary.textContent = buildMonthlySummary(previousTotal, currentTotal);
+    updateMonthlyChart(
+      [
+        startPreviousMonth.toLocaleString("it-IT", { month: "short", year: "numeric" }),
+        startCurrentMonth.toLocaleString("it-IT", { month: "short", year: "numeric" })
+      ],
+      [previousTotal, currentTotal]
+    );
+  } catch (error) {
+    console.error("Errore durante la generazione del resoconto:", error);
+    monthlySummary.textContent = "Non è stato possibile generare il resoconto. Verifica gli indici e le regole Firestore.";
+  } finally {
+    setButtonLoading(monthlyBtn, false);
+  }
+}
+
+function buildMonthlySummary(previousTotal, currentTotal) {
+  if (previousTotal === 0 && currentTotal === 0) {
+    return "Nessuna spesa né questo mese né il precedente.";
   }
 
-  monthlySummary.textContent = pctText;
+  if (previousTotal === 0) {
+    return `Nessuna spesa il mese precedente. Questo mese hai speso ${formatCurrency(currentTotal)}.`;
+  }
 
-  // Chart update
-  const labels = [
-    startPrev.toLocaleString('it-IT', { month:'short', year:'numeric' }),
-    startThis.toLocaleString('it-IT', { month:'short', year:'numeric' })
-  ];
-  const data = [prevTotal, thisTotal];
+  const difference = currentTotal - previousTotal;
+  const percentage = (difference / previousTotal) * 100;
 
-  if(monthlyChart) monthlyChart.destroy();
-  // eslint-disable-next-line no-undef
-  monthlyChart = new Chart(monthlyCanvas, {
-    type: 'bar',
+  if (percentage > 0) {
+    return `Hai speso il ${percentage.toFixed(1)}% in più rispetto al mese scorso ` +
+      `(da ${formatCurrency(previousTotal)} a ${formatCurrency(currentTotal)}).`;
+  }
+
+  if (percentage < 0) {
+    return `Hai speso il ${Math.abs(percentage).toFixed(1)}% in meno rispetto al mese scorso ` +
+      `(da ${formatCurrency(previousTotal)} a ${formatCurrency(currentTotal)}).`;
+  }
+
+  return `Stesso importo del mese scorso: ${formatCurrency(currentTotal)}.`;
+}
+
+function updateMonthlyChart(labels, values) {
+  if (typeof window.Chart !== "function" || !monthlyCanvas) {
+    console.warn("Chart.js non è disponibile: il riepilogo testuale resta comunque utilizzabile.");
+    return;
+  }
+
+  if (monthlyChart) {
+    monthlyChart.destroy();
+    monthlyChart = null;
+  }
+
+  monthlyChart = new window.Chart(monthlyCanvas.getContext("2d"), {
+    type: "bar",
     data: {
       labels,
       datasets: [{
-        label: 'Uscite €',
-        data,
+        label: "Uscite (€)",
+        data: values,
+        backgroundColor: ["rgba(106, 43, 255, 0.68)", "rgba(43, 156, 255, 0.72)"],
+        borderColor: ["rgba(150, 110, 255, 1)", "rgba(90, 185, 255, 1)"],
+        borderWidth: 1,
+        borderRadius: 7,
+        maxBarThickness: 90
       }]
     },
     options: {
       responsive: true,
-      plugins: { legend: { display: false } }
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (context) => formatCurrency(context.parsed.y)
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: "#b8bec5" },
+          grid: { display: false }
+        },
+        y: {
+          beginAtZero: true,
+          ticks: {
+            color: "#b8bec5",
+            callback: (value) => formatCurrency(value)
+          },
+          grid: { color: "rgba(255, 255, 255, 0.08)" }
+        }
+      }
     }
   });
 }
 
-/* manual trigger */
-monthlyBtn.addEventListener('click', generateMonthlyReport);
+monthlyBtn?.addEventListener("click", generateMonthlyReport);
 
-/* toggle auto report */
-autoToggle.addEventListener('click', () => {
+/* =========================================================
+   AGGIORNAMENTO AUTOMATICO MENSILE
+   ========================================================= */
+autoToggle?.addEventListener("click", () => {
   autoReportEnabled = !autoReportEnabled;
-  autoToggle.textContent = `Auto: ${autoReportEnabled ? 'ON' : 'OFF'}`;
+  autoToggle.textContent = `Auto: ${autoReportEnabled ? "ON" : "OFF"}`;
+  autoToggle.setAttribute("aria-pressed", String(autoReportEnabled));
+
+  if (autoReportEnabled) {
+    scheduleMonthlyAuto();
+  } else {
+    stopMonthlyAuto();
+  }
 });
 
-/* schedule automatic monthly run: compute time until next 1st at 00:00:10 then setTimeout; re-schedule each time */
-function scheduleMonthlyAuto(){
-  if(!autoReportEnabled || !currentUser) return;
+function scheduleMonthlyAuto() {
+  stopMonthlyAuto();
+  if (!autoReportEnabled || !currentUser) return;
+
   const now = new Date();
-  const next = new Date(now.getFullYear(), now.getMonth()+1, 1, 0,0,10,0);
-  const ms = next.getTime() - now.getTime();
-  setTimeout(async () => {
-    if(autoReportEnabled && currentUser) await generateMonthlyReport();
-    // reschedule recursively
-    scheduleMonthlyAuto();
-  }, ms);
+  const nextRun = new Date(now.getFullYear(), now.getMonth() + 1, 1, 0, 0, 10, 0);
+  const delay = Math.max(1_000, nextRun.getTime() - now.getTime());
+
+  monthlyTimeoutHandle = window.setTimeout(async () => {
+    monthlyTimeoutHandle = null;
+    if (autoReportEnabled && currentUser) {
+      await generateMonthlyReport();
+      scheduleMonthlyAuto();
+    }
+  }, delay);
 }
 
-/* ============================
-   UTILITY: show profile area for current user on init
-   ============================ */
-function showProfileInMainInitial(){
-  if(!currentUser) return;
-  // fetch user doc
-  (async ()=>{
-    try {
-      const uRef = doc(db, 'users', currentUser.userId);
-      const snap = await getDoc(uRef);
-      if(snap.exists()){
-        showProfileInMain(snap.data());
-      } else {
-        // fallback UI
-        profileName.textContent = `${currentUser.nome} ${currentUser.cognome}`;
-        profilePhone.textContent = currentUser.telefono;
-        avatarDisplay.innerHTML = '';
-      }
-    } catch(err){ console.error('showProfileInMainInitial', err); }
-  })();
-}
-
-/* export showProfileInMain to be used by users list click (defined earlier) */
-window.showProfileInMain = showProfileInMain;
-
-/* ============================
-   small: initial UI update after login to show current user's profile
-   ============================ */
-async function initialAfterLogin(){
-  if(currentUser){
-    await loadUserProfilePhoto(currentUser.userId);
-    showProfileInMainInitial();
+function stopMonthlyAuto() {
+  if (monthlyTimeoutHandle !== null) {
+    window.clearTimeout(monthlyTimeoutHandle);
+    monthlyTimeoutHandle = null;
   }
 }
 
-/* slight delay once app opens to load profile */
-setTimeout(()=> {
-  if(currentUser) initialAfterLogin();
-}, 600);
+/* =========================================================
+   AVVIO
+   ========================================================= */
+restoreSavedSession();
 
-/* ============================
-   Keep logs refreshed every 45s
-   ============================ */
-setInterval(()=> {
-  if(currentUser) loadLogs();
-}, 20_000);
-
-/* ============================
-   END OF FILE
-   ============================ */
+window.addEventListener("beforeunload", () => {
+  stopPresence();
+  stopLogRefresh();
+  stopMonthlyAuto();
+  if (typeof usersUnsub === "function") usersUnsub();
+});
