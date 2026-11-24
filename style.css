@@ -50,8 +50,8 @@ button:disabled {
 }
 
 button.primary {
-  background: var(--accent);
-  color: #2e8b57;
+  background: #2e8b57;
+  color: #ffffff;
 }
 
 /* Pulsante Aggiungi entrata: verde leggermente scuro */
