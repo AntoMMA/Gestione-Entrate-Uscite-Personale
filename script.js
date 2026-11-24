@@ -1,56 +1,881 @@
 /* Gestionale: Firebase Firestore + Cloudinary. Accesso legacy tramite profilo. */
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.5.2/firebase-app.js';
-import { getFirestore,collection,doc,setDoc,updateDoc,getDoc,getDocs,addDoc,deleteDoc,query,where,orderBy,serverTimestamp,onSnapshot,Timestamp,runTransaction } from 'https://www.gstatic.com/firebasejs/10.5.2/firebase-firestore.js';
-const firebaseConfig={apiKey:'AIzaSyDA8x2UcwoDBNbEZbsE5nGUNlLHI-aXUHA',authDomain:'gestionale-entrate-uscite-wr.firebaseapp.com',projectId:'gestionale-entrate-uscite-wr',storageBucket:'gestionale-entrate-uscite-wr.firebasestorage.app',messagingSenderId:'180959843310',appId:'1:180959843310:web:0800ebae9267f61071b4ff'};
+import {
+  initializeApp 
+} from 'https://www.gstatic.com/firebasejs/10.5.2/firebase-app.js';
+import {
+  getFirestore,collection,doc,setDoc,updateDoc,getDoc,getDocs,addDoc,deleteDoc,query,where,orderBy,serverTimestamp,onSnapshot,Timestamp,runTransaction 
+} from 'https://www.gstatic.com/firebasejs/10.5.2/firebase-firestore.js';
+import {
+  getDatabase, ref, onValue, set, onDisconnect, remove 
+} from 'https://www.gstatic.com/firebasejs/10.5.2/firebase-database.js';
+const firebaseConfig={
+  databaseURL:'https://gestionale-entrate-uscite-wr-default-rtdb.europe-west1.firebasedatabase.app',apiKey:'AIzaSyDA8x2UcwoDBNbEZbsE5nGUNlLHI-aXUHA',authDomain:'gestionale-entrate-uscite-wr.firebaseapp.com',projectId:'gestionale-entrate-uscite-wr',storageBucket:'gestionale-entrate-uscite-wr.firebasestorage.app',messagingSenderId:'180959843310',appId:'1:180959843310:web:0800ebae9267f61071b4ff'
+};
 const CLOUDINARY_CLOUD_NAME='dzgynfn7t',CLOUDINARY_UPLOAD_PRESET='gestionale_personale',CLOUDINARY_URL=`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,MAX_PROFILE_IMAGE_SIZE=4*1024*1024;
-const app=initializeApp(firebaseConfig),db=getFirestore(app),$=s=>document.querySelector(s);
+const app=initializeApp(firebaseConfig),db=getFirestore(app),rtdb=getDatabase(app),$=s=>document.querySelector(s);
 const loginScreen=$('#login-screen'),loginForm=$('#login-form'),loginBtn=$('#login-btn'),nomeInput=$('#nome'),cognomeInput=$('#cognome'),telefonoInput=$('#telefono'),appDiv=$('#app'),logoutBtn=$('#logout-btn'),usersList=$('#users-list');
 const rememberCheckbox=$('#remember-me'),REMEMBER_KEY='gd_remembered_credentials';
 const profileName=$('#profile-name'),profilePhone=$('#profile-phone'),avatarDisplay=$('#avatar-display'),profileFileInput=$('#profile-file'),removeProfileBtn=$('#remove-profile-btn'),profileUploadLabel=$('#profile-upload-label');
 const entrataImporto=$('#entrata-importo'),entrataMotivo=$('#entrata-motivo'),uscitaImporto=$('#uscita-importo'),uscitaMotivo=$('#uscita-motivo'),addEntrataBtn=$('#add-entrata'),addUscitaBtn=$('#add-uscita'),logEntrate=$('#log-entrate'),logUscite=$('#log-uscite'),saldoTotale=$('#saldo-totale'),monthlyBtn=$('#monthly-report-btn'),autoToggle=$('#auto-report-toggle'),monthlySummary=$('#monthly-summary'),monthlyCanvas=$('#monthlyChart');
 let currentUser=null,usersUnsub=null,roomUnsub=null,roomTxUnsub=null,monthlyChart=null,presenceTimer=null,logsTimer=null,monthlyTimer=null,roomPresenceTimer=null,activeRoomId=null,usersCache=[],roomCache=null,autoReportEnabled=true,opening=false,casaUnsub=null,personalEntryUnsub=null,personalExitUnsub=null;
-const money=n=>new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR'}).format(Number(n)||0),toastEl=$('#toast');let toastTimer;
-function toast(s){toastEl.textContent=s;toastEl.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>toastEl.classList.remove('show'),3200)}function err(s,e){console.error(s,e);toast(s)}function loading(b,on,t='Attendi...'){if(!b)return;if(on){b.dataset.orig=b.textContent;b.disabled=true;b.textContent=t}else{b.disabled=false;if(b.dataset.orig){b.textContent=b.dataset.orig;delete b.dataset.orig}}}
-function makeUserId(n,c,t){return `${n.trim().toLowerCase().replace(/\s+/g,'_').replace(/[\/?#[\]]/g,'_')}_${c.trim().toLowerCase().replace(/\s+/g,'_').replace(/[\/?#[\]]/g,'_')}_${t.replace(/\D/g,'')}`}
-function validUser(u){return u&&['nome','cognome','telefono','userId'].every(k=>typeof u[k]==='string'&&u[k].trim())}function dateOf(t){if(!t)return null;if(t.toDate)return t.toDate();let d=new Date(t);return isNaN(d)?null:d}function online(u){let d=dateOf(u?.lastSeen);return d&&Date.now()-d.getTime()<45000&&Date.now()-d.getTime()>=0}
-function avatar(el,url,name){if(!el)return;el.replaceChildren();if(url){let img=document.createElement('img');img.src=url;img.alt='Foto profilo';img.onerror=()=>{el.textContent=(name||'?').charAt(0).toUpperCase()};el.append(img)}else el.textContent=(name||'?').charAt(0).toUpperCase()}
-function switchView(view){document.querySelectorAll('.view').forEach(x=>x.classList.toggle('active',x.id===`view-${view}`));document.querySelectorAll('.navbtn').forEach(x=>x.classList.toggle('active',x.dataset.view===view));if(view==='monopoly'){refreshRooms();if(activeRoomId)roomPing(true)}else if(activeRoomId)roomPing(false);if(view==='casa')subscribeCasa();}document.querySelectorAll('.navbtn').forEach(b=>b.addEventListener('click',()=>switchView(b.dataset.view)));
-loginForm.addEventListener('submit',async e=>{e.preventDefault();if(opening)return;let nome=nomeInput.value.trim(),cognome=cognomeInput.value.trim(),telefono=telefonoInput.value.trim();if(!nome||!cognome||!telefono)return toast('Compila tutti i campi');let user={nome,cognome,telefono,userId:makeUserId(nome,cognome,telefono)};loading(loginBtn,true,'Accesso...');try{await setDoc(doc(db,'users',user.userId),{...user,lastSeen:serverTimestamp()},{merge:true});try{sessionStorage.setItem('gd_user',JSON.stringify(user));if(rememberCheckbox.checked)localStorage.setItem(REMEMBER_KEY,JSON.stringify({nome,cognome,telefono}));else localStorage.removeItem(REMEMBER_KEY)}catch(storageError){console.warn('Memoria del browser non disponibile',storageError)}currentUser=user;await openApp()}catch(e){let code=e?.code||'',msg='Accesso non riuscito. ';if(code.includes('permission-denied'))msg+='Firebase Firestore ha negato l’accesso: controlla le Rules.';else if(code.includes('unavailable')||code.includes('network'))msg+='Connessione internet o Firebase temporaneamente non disponibile.';else if(code.includes('deadline-exceeded'))msg+='La connessione a Firebase ha impiegato troppo tempo. Riprova.';else msg+='Errore Firebase: '+(e?.message||code||'errore sconosciuto');err(msg,e)}finally{loading(loginBtn,false)}});
-function loadRememberedCredentials(){try{let r=JSON.parse(localStorage.getItem(REMEMBER_KEY)||'null');if(r&&typeof r.nome==='string'&&typeof r.cognome==='string'&&typeof r.telefono==='string'){nomeInput.value=r.nome;cognomeInput.value=r.cognome;telefonoInput.value=r.telefono;rememberCheckbox.checked=true}}catch(e){console.warn('Credenziali salvate non leggibili',e)}}rememberCheckbox.addEventListener('change',()=>{try{if(!rememberCheckbox.checked)localStorage.removeItem(REMEMBER_KEY);else if(nomeInput.value.trim()&&cognomeInput.value.trim()&&telefonoInput.value.trim())localStorage.setItem(REMEMBER_KEY,JSON.stringify({nome:nomeInput.value.trim(),cognome:cognomeInput.value.trim(),telefono:telefonoInput.value.trim()}))}catch(e){console.warn('Impossibile salvare le credenziali',e)}});
-async function restore(){loadRememberedCredentials();let raw;try{raw=sessionStorage.getItem('gd_user')}catch(e){console.warn('Session storage non disponibile',e);return}if(!raw)return;try{let u=JSON.parse(raw);if(!validUser(u)){sessionStorage.removeItem('gd_user');return}currentUser=u;await setDoc(doc(db,'users',u.userId),{...u,lastSeen:serverTimestamp()},{merge:true});await openApp()}catch(e){console.error('Ripristino sessione fallito',e);try{sessionStorage.removeItem('gd_user')}catch{}currentUser=null;toast('Sessione non ripristinata. Accedi nuovamente.')}}
-async function openApp(){if(!currentUser||opening)return;opening=true;loginScreen.classList.add('hidden');appDiv.classList.remove('hidden');profileName.textContent=`${currentUser.nome} ${currentUser.cognome}`;profilePhone.textContent=currentUser.telefono;startPresence();subscribeUsers();startLogsTimer();subscribePersonalRealtime();subscribeCasa();try{await Promise.allSettled([loadProfile(),loadLogs(),report()]);showProfile(currentUser)}finally{opening=false;scheduleReport()}}
-function startPresence(){stopPresence();pingPresence();presenceTimer=setInterval(pingPresence,20000)}async function pingPresence(){if(currentUser)try{await setDoc(doc(db,'users',currentUser.userId),{lastSeen:serverTimestamp()},{merge:true})}catch(e){console.warn(e)}}function stopPresence(){clearInterval(presenceTimer);presenceTimer=null}
-function logout(){leaveRoom(false);stopPresence();clearInterval(logsTimer);clearTimeout(monthlyTimer);if(usersUnsub)usersUnsub();if(casaUnsub)casaUnsub();if(personalEntryUnsub)personalEntryUnsub();if(personalExitUnsub)personalExitUnsub();sessionStorage.removeItem('gd_user');currentUser=null;appDiv.classList.add('hidden');loginScreen.classList.remove('hidden');usersList.replaceChildren();logEntrate.replaceChildren();logUscite.replaceChildren();if(monthlyChart){monthlyChart.destroy();monthlyChart=null}}logoutBtn.addEventListener('click',logout);
-function subscribeUsers(){if(usersUnsub)usersUnsub();usersUnsub=onSnapshot(collection(db,'users'),s=>{usersCache=s.docs.map(d=>d.data()).filter(u=>u.userId).sort((a,b)=>`${a.nome} ${a.cognome}`.localeCompare(`${b.nome} ${b.cognome}`,'it'));renderUsers();populateRoomSelects()},e=>console.error(e))}
-function renderUsers(){let f=document.createDocumentFragment();usersCache.forEach(u=>{let li=document.createElement('li'),av=document.createElement('div');av.className='user-avatar';avatar(av,u.photoURL,u.nome);let m=document.createElement('div'),nm=document.createElement('div'),st=document.createElement('div'),dot=document.createElement('span'),txt=document.createElement('span');nm.className='user-name';nm.textContent=`${u.nome} ${u.cognome}`;st.className='user-status';dot.className=`status-dot ${online(u)?'status-online':'status-offline'}`;txt.textContent=online(u)?'online':'offline';st.append(dot,txt);m.append(nm,st);li.append(av,m);li.addEventListener('click',()=>showProfile(u));f.append(li)});usersList.replaceChildren(f)}function showProfile(u){if(!u)return;profileName.textContent=`${u.nome||''} ${u.cognome||''}`.trim();profilePhone.textContent=u.telefono||'';avatar(avatarDisplay,u.photoURL,u.nome);avatar($('#avatar-profile'),u.photoURL,u.nome);$('#profile-name-profile').textContent=`${u.nome||''} ${u.cognome||''}`;$('#profile-phone-profile').textContent=u.telefono||'';let own=u.userId===currentUser?.userId;profileFileInput.disabled=!own;profileUploadLabel.classList.toggle('hidden',!own);removeProfileBtn.classList.toggle('hidden',!(own&&u.photoURL))}
-async function loadProfile(){let s=await getDoc(doc(db,'users',currentUser.userId));if(s.exists())showProfile(s.data())}profileFileInput.addEventListener('change',async e=>{let file=e.target.files?.[0];if(!file||!currentUser)return;if(!file.type.startsWith('image/')||file.size>MAX_PROFILE_IMAGE_SIZE){toast('Immagine non valida o oltre 4 MB');e.target.value='';return}try{let fd=new FormData();fd.append('file',file);fd.append('upload_preset',CLOUDINARY_UPLOAD_PRESET);fd.append('folder','gestionale_users');fd.append('public_id',currentUser.userId);let r=await fetch(CLOUDINARY_URL,{method:'POST',body:fd}),j=await r.json();if(!r.ok||!j.secure_url)throw Error(j.error?.message||'Upload fallito');await updateDoc(doc(db,'users',currentUser.userId),{photoURL:j.secure_url,lastSeen:serverTimestamp()});await loadProfile();toast('Foto aggiornata')}catch(e){err('Upload foto non riuscito',e)}finally{e.target.value=''}});removeProfileBtn.addEventListener('click',async()=>{if(!confirm('Rimuovere la foto?'))return;try{await updateDoc(doc(db,'users',currentUser.userId),{photoURL:null});await loadProfile();toast('Foto rimossa')}catch(e){err('Rimozione fallita',e)}});
-addEntrataBtn.addEventListener('click',()=>addMov('entries',entrataImporto,entrataMotivo,addEntrataBtn));addUscitaBtn.addEventListener('click',()=>addMov('exits',uscitaImporto,uscitaMotivo,addUscitaBtn));async function addMov(c,a,r,b){let amount=Number(a.value),reason=r.value.trim()||(c==='entries'?'Entrata':'Uscita');if(!Number.isFinite(amount)||amount<=0||amount>99999999)return toast('Inserisci un importo valido');loading(b,true,'Salvataggio');try{await addDoc(collection(db,c),{userId:currentUser.userId,importo:amount,motivo:reason,createdAt:serverTimestamp()});a.value='';r.value='';await loadLogs();await report();toast('Movimento salvato')}catch(e){err('Salvataggio non riuscito',e)}finally{loading(b,false)}}
-async function loadLogs(){if(!currentUser)return;let uid=currentUser.userId;try{let q1=query(collection(db,'entries'),where('userId','==',uid),orderBy('createdAt','desc')),q2=query(collection(db,'exits'),where('userId','==',uid),orderBy('createdAt','desc'));let [a,b]=await Promise.all([getDocs(q1),getDocs(q2)]);if(!currentUser||currentUser.userId!==uid)return;let sumA=0,sumB=0,fa=document.createDocumentFragment(),fb=document.createDocumentFragment(),records=[];a.forEach(d=>{let x=d.data();sumA+=Number(x.importo)||0;fa.append(createLog(x,d.id,'entries'));records.push({type:'Entrata',...x})});b.forEach(d=>{let x=d.data();sumB+=Number(x.importo)||0;fb.append(createLog(x,d.id,'exits'));records.push({type:'Uscita',...x})});logEntrate.replaceChildren(fa);logUscite.replaceChildren(fb);saldoTotale.textContent=`Entrate: ${money(sumA)} — Uscite: ${money(sumB)} — Saldo: ${money(sumA-sumB)}`;$('#dash-entries').textContent=money(sumA);$('#dash-exits').textContent=money(sumB);$('#dash-balance').textContent=money(sumA-sumB);window.lastRecords=records}catch(e){console.error(e);toast('Errore caricamento movimenti: controlla indici Firestore')}}function createLogItem(x){let li=document.createElement('li');li.textContent=`${money(x.importo)} — ${x.motivo||'—'}`;return li}function createLog(x,id,c){let li=createLogItem(x);li.dataset.id=id;li.dataset.collection=c;return li}function startLogsTimer(){clearInterval(logsTimer);logsTimer=setInterval(()=>currentUser&&loadLogs(),20000)}
-$('#export-csv').addEventListener('click',()=>{let rows=window.lastRecords||[];if(!rows.length)return toast('Nessun movimento da esportare');let csv='Tipo;Importo;Motivo;Data\n'+rows.map(x=>`${x.type};${String(x.importo).replace('.',',')};${(x.motivo||'').replaceAll(';',',')};${dateOf(x.createdAt)?.toLocaleString('it-IT')||''}`).join('\n');let blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='movimenti.csv';a.click();URL.revokeObjectURL(url)});
-async function totalRange(c,u,s,e){let q=query(collection(db,c),where('userId','==',u),where('createdAt','>=',Timestamp.fromDate(s)),where('createdAt','<',Timestamp.fromDate(e))),snap=await getDocs(q);return snap.docs.reduce((sum,d)=>sum+(Number(d.data().importo)||0),0)}async function report(){if(!currentUser)return;monthlySummary.textContent='Calcolo...';loading(monthlyBtn,true,'Calcolo');try{let n=new Date(),a=new Date(n.getFullYear(),n.getMonth(),1),b=new Date(n.getFullYear(),n.getMonth()+1,1),p=new Date(n.getFullYear(),n.getMonth()-1,1);let [cur,prev]=await Promise.all([totalRange('exits',currentUser.userId,a,b),totalRange('exits',currentUser.userId,p,a)]);monthlySummary.textContent=summary(prev,cur);drawChart([p.toLocaleDateString('it-IT',{month:'short',year:'numeric'}),a.toLocaleDateString('it-IT',{month:'short',year:'numeric'})],[prev,cur])}catch(e){console.error(e);monthlySummary.textContent='Report non disponibile: verifica regole e indici'}finally{loading(monthlyBtn,false)}}function summary(p,c){if(!p&&!c)return'Nessuna spesa nei due mesi';if(!p)return`Mese precedente senza spese; questo mese: ${money(c)}.`;let pct=(c-p)/p*100;return pct>0?`Spesa aumentata del ${pct.toFixed(1)}% (${money(p)} → ${money(c)}).`:pct<0?`Spesa diminuita del ${Math.abs(pct).toFixed(1)}% (${money(p)} → ${money(c)}).`:`Spesa invariata: ${money(c)}.`}function drawChart(labels,values){if(!window.Chart||!monthlyCanvas)return;if(monthlyChart)monthlyChart.destroy();monthlyChart=new Chart(monthlyCanvas,{type:'bar',data:{labels,datasets:[{label:'Uscite',data:values,backgroundColor:['#7c9cff','#3ac786'],borderRadius:8}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>money(c.parsed.y)}}},scales:{y:{beginAtZero:true,ticks:{callback:v=>money(v)}}}}})}monthlyBtn.addEventListener('click',report);autoToggle.addEventListener('click',()=>{autoReportEnabled=!autoReportEnabled;autoToggle.textContent=`Auto: ${autoReportEnabled?'ON':'OFF'}`;autoToggle.setAttribute('aria-pressed',String(autoReportEnabled));autoReportEnabled?scheduleReport():clearTimeout(monthlyTimer)});function scheduleReport(){clearTimeout(monthlyTimer);if(!autoReportEnabled||!currentUser)return;let n=new Date(),next=new Date(n.getFullYear(),n.getMonth()+1,1,0,0,10);monthlyTimer=setTimeout(async()=>{await report();scheduleReport()},Math.max(1000,next-n))}
+let presenceUnsub=null, presenceConnectedUnsub=null, presenceSessionId=null, presenceOnlineMap={
+};
+const money=n=>new Intl.NumberFormat('it-IT',{
+  style:'currency',currency:'EUR'
+}).format(Number(n)||0),toastEl=$('#toast');
+let toastTimer;
+function toast(s){
+  toastEl.textContent=s;
+  toastEl.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>toastEl.classList.remove('show'),3200)
+}function err(s,e){
+  console.error(s,e);
+  toast(s)
+}function loading(b,on,t='Attendi...'){
+  if(!b)return;
+  if(on){
+    b.dataset.orig=b.textContent;
+    b.disabled=true;
+    b.textContent=t
+  }else{
+    b.disabled=false;
+    if(b.dataset.orig){
+      b.textContent=b.dataset.orig;
+      delete b.dataset.orig
+    }
+  }
+}
+function makeUserId(n,c,t){
+  return `${n.trim().toLowerCase().replace(/\s+/g,'_').replace(/[**\/**?#[**\]**]/g,'_')}_${c.trim().toLowerCase().replace(/\s+/g,'_').replace(/[**\/**?#[**\]**]/g,'_')}_${t.replace(/\D/g,'')}`
+}
+function validUser(u){
+  return u&&['nome','cognome','telefono','userId'].every(k=>typeof u[k]==='string'&&u[k].trim())
+}function online(u){
+  return !!presenceOnlineMap[u?.userId]
+}
+function avatar(el,url,name){
+  if(!el)return;
+  el.replaceChildren();
+  if(url){
+    let img=document.createElement('img');
+    img.src=url;
+    img.alt='Foto profilo';
+    img.onerror=()=>{
+      el.textContent=(name||'?').charAt(0).toUpperCase()
+    };
+    el.append(img)
+  }else el.textContent=(name||'?').charAt(0).toUpperCase()
+}
+function switchView(view){
+  document.querySelectorAll('.view').forEach(x=>x.classList.toggle('active',x.id===`view-${view}`));
+  document.querySelectorAll('.navbtn').forEach(x=>x.classList.toggle('active',x.dataset.view===view));
+  if(view==='monopoly'){
+    refreshRooms();
+    if(activeRoomId)roomPing(true)
+  }else if(activeRoomId)roomPing(false);
+  if(view==='casa')subscribeCasa();
+}document.querySelectorAll('.navbtn').forEach(b=>b.addEventListener('click',()=>switchView(b.dataset.view)));
+loginForm.addEventListener('submit',async e=>{
+  e.preventDefault();
+  if(opening)return;
+  let nome=nomeInput.value.trim(),cognome=cognomeInput.value.trim(),telefono=telefonoInput.value.trim();
+  if(!nome||!cognome||!telefono)return toast('Compila tutti i campi');
+  let user={
+    nome,cognome,telefono,userId:makeUserId(nome,cognome,telefono)
+  };
+  loading(loginBtn,true,'Accesso...');
+  try{
+    await setDoc(doc(db,'users',user.userId),{
+      ...user
+    },{
+      merge:true
+    });
+    try{
+      sessionStorage.setItem('gd_user',JSON.stringify(user));
+      if(rememberCheckbox.checked)localStorage.setItem(REMEMBER_KEY,JSON.stringify({
+        nome,cognome,telefono
+      }));
+      else localStorage.removeItem(REMEMBER_KEY)
+    }catch(storageError){
+      console.warn('Memoria del browser non disponibile',storageError)
+    }currentUser=user;
+    await openApp()
+  }catch(e){
+    let code=e?.code||'',msg='Accesso non riuscito. ';
+    if(code.includes('permission-denied'))msg+='Firebase Firestore ha negato l’accesso: controlla le Rules.';
+    else if(code.includes('unavailable')||code.includes('network'))msg+='Connessione internet o Firebase temporaneamente non disponibile.';
+    else if(code.includes('deadline-exceeded'))msg+='La connessione a Firebase ha impiegato troppo tempo. Riprova.';
+    else msg+='Errore Firebase: '+(e?.message||code||'errore sconosciuto');
+    err(msg,e)
+  }finally{
+    loading(loginBtn,false)
+  }
+});
+function loadRememberedCredentials(){
+  try{
+    let r=JSON.parse(localStorage.getItem(REMEMBER_KEY)||'null');
+    if(r&&typeof r.nome==='string'&&typeof r.cognome==='string'&&typeof r.telefono==='string'){
+      nomeInput.value=r.nome;
+      cognomeInput.value=r.cognome;
+      telefonoInput.value=r.telefono;
+      rememberCheckbox.checked=true
+    }
+  }catch(e){
+    console.warn('Credenziali salvate non leggibili',e)
+  }
+}rememberCheckbox.addEventListener('change',()=>{
+  try{
+    if(!rememberCheckbox.checked)localStorage.removeItem(REMEMBER_KEY);
+    else if(nomeInput.value.trim()&&cognomeInput.value.trim()&&telefonoInput.value.trim())localStorage.setItem(REMEMBER_KEY,JSON.stringify({
+      nome:nomeInput.value.trim(),cognome:cognomeInput.value.trim(),telefono:telefonoInput.value.trim()
+    }))
+  }catch(e){
+    console.warn('Impossibile salvare le credenziali',e)
+  }
+});
+async function restore(){
+  loadRememberedCredentials();
+  let raw;
+  try{
+    raw=sessionStorage.getItem('gd_user')
+  }catch(e){
+    console.warn('Session storage non disponibile',e);
+    return
+  }if(!raw)return;
+  try{
+    let u=JSON.parse(raw);
+    if(!validUser(u)){
+      sessionStorage.removeItem('gd_user');
+      return
+    }currentUser=u;
+    await setDoc(doc(db,'users',u.userId),{
+      ...u
+    },{
+      merge:true
+    });
+    await openApp()
+  }catch(e){
+    console.error('Ripristino sessione fallito',e);
+    try{
+      sessionStorage.removeItem('gd_user')
+    }catch{
+    }currentUser=null;
+    toast('Sessione non ripristinata. Accedi nuovamente.')
+  }
+}
+async function openApp()
+{
+  if(!currentUser||opening)return;
+  opening=true;
+  loginScreen.classList.add('hidden');
+  appDiv.classList.remove('hidden');
+  profileName.textContent=`${currentUser.nome} ${currentUser.cognome}`;
+  profilePhone.textContent=currentUser.telefono;
+  startPresence();
+  subscribeUsers();
+  startLogsTimer();
+  subscribePersonalRealtime();
+  subscribeCasa();
+  try{
+    await Promise.allSettled([loadProfile(),loadLogs(),report()]);
+    showProfile(currentUser)
+  }finally{
+    opening=false;
+    scheduleReport()
+  }
+}
+function startPresence(){
+  stopPresence();
+  if(!currentUser)return;
+  presenceSessionId=crypto.randomUUID();
+  const connectedRef=ref(rtdb,'/.info/connected');
+  presenceConnectedUnsub=onValue(connectedRef,async snap=>{
+    if(!snap.val()||!currentUser)return;
+    const sessionRef=ref(rtdb,`presence/${currentUser.userId}/${presenceSessionId}`);
+    try{
+      await onDisconnect(sessionRef).remove();
+      await set(sessionRef,{
+        online:true,name:`${currentUser.nome} ${currentUser.cognome}`,timestamp:Date.now()
+      });
+    }catch(e){
+      console.error('Configurazione presenza RTDB fallita',e);
+      toast('Presenza online non configurata: controlla le Rules di Realtime Database.')
+    }
+  });
+  presenceUnsub=onValue(ref(rtdb,'presence'),snap=>{
+    const data=snap.val()||{
+    };
+    presenceOnlineMap={
+    };
+    for(const [uid,sessions] of Object.entries(data)){
+      presenceOnlineMap[uid]=!!sessions&&Object.keys(sessions).length>0;
+    }renderUsers();
+    populateRoomSelects();
+  },e=>{
+    console.error('Listener presenza RTDB',e);
+    toast('Errore lettura presenza online');
+  });
+}async function pingPresence(){
+  /* La presenza è gestita da RTDB e onDisconnect. */
+}function stopPresence(){
+  if(presenceConnectedUnsub){
+    presenceConnectedUnsub();
+    presenceConnectedUnsub=null;
+  }if(presenceUnsub){
+    presenceUnsub();
+    presenceUnsub=null;
+  }if(presenceSessionId&&currentUser){
+    remove(ref(rtdb,`presence/${currentUser.userId}/${presenceSessionId}`)).catch(()=>{
+    });
+  }presenceSessionId=null;
+  presenceTimer=null;
+}
+function logout(){
+  leaveRoom(false);
+  stopPresence();
+  clearInterval(logsTimer);
+  clearTimeout(monthlyTimer);
+  if(usersUnsub)usersUnsub();
+  if(casaUnsub)casaUnsub();
+  if(personalEntryUnsub)personalEntryUnsub();
+  if(personalExitUnsub)personalExitUnsub();
+  sessionStorage.removeItem('gd_user');
+  presenceOnlineMap={
+  };
+  currentUser=null;
+  appDiv.classList.add('hidden');
+  loginScreen.classList.remove('hidden');
+  usersList.replaceChildren();
+  logEntrate.replaceChildren();
+  logUscite.replaceChildren();
+  if(monthlyChart){
+    monthlyChart.destroy();
+    monthlyChart=null
+  }
+}logoutBtn.addEventListener('click',logout);
+function subscribeUsers(){
+  if(usersUnsub)usersUnsub();
+  usersUnsub=onSnapshot(collection(db,'users'),s=>{
+    usersCache=s.docs.map(d=>d.data()).filter(u=>u.userId).sort((a,b)=>`${a.nome} ${a.cognome}`.localeCompare(`${b.nome} ${b.cognome}`,'it'));
+    renderUsers();
+    populateRoomSelects()
+  },e=>console.error(e))
+}
+function renderUsers(){
+  let f=document.createDocumentFragment();
+  usersCache.forEach(u=>{
+    let li=document.createElement('li'),av=document.createElement('div');
+    av.className='user-avatar';
+    avatar(av,u.photoURL,u.nome);
+    let m=document.createElement('div'),nm=document.createElement('div'),st=document.createElement('div'),dot=document.createElement('span'),txt=document.createElement('span');
+    nm.className='user-name';
+    nm.textContent=`${u.nome} ${u.cognome}`;
+    st.className='user-status';
+    dot.className=`status-dot ${online(u)?'status-online':'status-offline'}`;
+    txt.textContent=online(u)?'online':'offline';
+    st.append(dot,txt);
+    m.append(nm,st);
+    li.append(av,m);
+    li.addEventListener('click',()=>showProfile(u));
+    f.append(li)
+  });
+  usersList.replaceChildren(f)
+}function showProfile(u){
+  if(!u)return;
+  profileName.textContent=`${u.nome||''} ${u.cognome||''}`.trim();
+  profilePhone.textContent=u.telefono||'';
+  avatar(avatarDisplay,u.photoURL,u.nome);
+  avatar($('#avatar-profile'),u.photoURL,u.nome);
+  $('#profile-name-profile').textContent=`${u.nome||''} ${u.cognome||''}`;
+  $('#profile-phone-profile').textContent=u.telefono||'';
+  let own=u.userId===currentUser?.userId;
+  profileFileInput.disabled=!own;
+  profileUploadLabel.classList.toggle('hidden',!own);
+  removeProfileBtn.classList.toggle('hidden',!(own&&u.photoURL))
+}
+async function loadProfile(){
+  let s=await getDoc(doc(db,'users',currentUser.userId));
+  if(s.exists())showProfile(s.data())
+}profileFileInput.addEventListener('change',async e=>{
+  let file=e.target.files?.[0];
+  if(!file||!currentUser)return;
+  if(!file.type.startsWith('image/')||file.size>MAX_PROFILE_IMAGE_SIZE){
+    toast('Immagine non valida o oltre 4 MB');
+    e.target.value='';
+    return
+  }try{
+    let fd=new FormData();
+    fd.append('file',file);
+    fd.append('upload_preset',CLOUDINARY_UPLOAD_PRESET);
+    fd.append('folder','gestionale_users');
+    fd.append('public_id',currentUser.userId);
+    let r=await fetch(CLOUDINARY_URL,{
+      method:'POST',body:fd
+    }),j=await r.json();
+    if(!r.ok||!j.secure_url)throw Error(j.error?.message||'Upload fallito');
+    await updateDoc(doc(db,'users',currentUser.userId),{
+      photoURL:j.secure_url,lastSeen:serverTimestamp()
+    });
+    await loadProfile();
+    toast('Foto aggiornata')
+  }catch(e){
+    err('Upload foto non riuscito',e)
+  }finally{
+    e.target.value=''
+  }
+});
+removeProfileBtn.addEventListener('click',async()=>{
+  if(!confirm('Rimuovere la foto?'))return;
+  try{
+    await updateDoc(doc(db,'users',currentUser.userId),{
+      photoURL:null
+    });
+    await loadProfile();
+    toast('Foto rimossa')
+  }catch(e){
+    err('Rimozione fallita',e)
+  }
+});
+addEntrataBtn.addEventListener('click',()=>addMov('entries',entrataImporto,entrataMotivo,addEntrataBtn));
+addUscitaBtn.addEventListener('click',()=>addMov('exits',uscitaImporto,uscitaMotivo,addUscitaBtn));
+async function addMov(c,a,r,b){
+  let amount=Number(a.value),reason=r.value.trim()||(c==='entries'?'Entrata':'Uscita');
+  if(!Number.isFinite(amount)||amount<=0||amount>99999999)return toast('Inserisci un importo valido');
+  loading(b,true,'Salvataggio');
+  try{
+    await addDoc(collection(db,c),{
+      userId:currentUser.userId,importo:amount,motivo:reason,createdAt:serverTimestamp()
+    });
+    a.value='';
+    r.value='';
+    await loadLogs();
+    await report();
+    toast('Movimento salvato')
+  }catch(e){
+    err('Salvataggio non riuscito',e)
+  }finally{
+    loading(b,false)
+  }
+}
+async function loadLogs(){
+  if(!currentUser)return;
+  let uid=currentUser.userId;
+  try{
+    let q1=query(collection(db,'entries'),where('userId','==',uid),orderBy('createdAt','desc')),q2=query(collection(db,'exits'),where('userId','==',uid),orderBy('createdAt','desc'));
+    let [a,b]=await Promise.all([getDocs(q1),getDocs(q2)]);
+    if(!currentUser||currentUser.userId!==uid)return;
+    let sumA=0,sumB=0,fa=document.createDocumentFragment(),fb=document.createDocumentFragment(),records=[];
+    a.forEach(d=>{
+      let x=d.data();
+      sumA+=Number(x.importo)||0;
+      fa.append(createLog(x,d.id,'entries'));
+      records.push({
+        type:'Entrata',...x
+      })
+    });
+    b.forEach(d=>{
+      let x=d.data();
+      sumB+=Number(x.importo)||0;
+      fb.append(createLog(x,d.id,'exits'));
+      records.push({
+        type:'Uscita',...x
+      })
+    });
+    logEntrate.replaceChildren(fa);
+    logUscite.replaceChildren(fb);
+    saldoTotale.textContent=`Entrate: ${money(sumA)} — Uscite: ${money(sumB)} — Saldo: ${money(sumA-sumB)}`;
+    $('#dash-entries').textContent=money(sumA);
+    $('#dash-exits').textContent=money(sumB);
+    $('#dash-balance').textContent=money(sumA-sumB);
+    window.lastRecords=records
+  }catch(e){
+    console.error(e);
+    toast('Errore caricamento movimenti: controlla indici Firestore')
+  }
+}function createLogItem(x){
+  let li=document.createElement('li');
+  li.textContent=`${money(x.importo)} — ${x.motivo||'—'}`;
+  return li
+}function createLog(x,id,c){
+  let li=createLogItem(x);
+  li.dataset.id=id;
+  li.dataset.collection=c;
+  return li
+}function startLogsTimer(){
+  clearInterval(logsTimer);
+  logsTimer=setInterval(()=>currentUser&&loadLogs(),20000)
+}
+$('#export-csv').addEventListener('click',()=>{
+  let rows=window.lastRecords||[];
+  if(!rows.length)return toast('Nessun movimento da esportare');
+  let csv='Tipo;Importo;Motivo;Data\n'+rows.map(x=>`${x.type};${String(x.importo).replace('.',',')};${(x.motivo||'').replaceAll(';',',')};${dateOf(x.createdAt)?.toLocaleString('it-IT')||''}`).join('\n');
+  let blob=new Blob(['\ufeff'+csv],{
+    type:'text/csv;charset=utf-8'
+  }),url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;
+  a.download='movimenti.csv';
+  a.click();
+  URL.revokeObjectURL(url)
+});
+async function totalRange(c,u,s,e){
+  let q=query(collection(db,c),where('userId','==',u),where('createdAt','>=',Timestamp.fromDate(s)),where('createdAt','<',Timestamp.fromDate(e))),snap=await getDocs(q);
+  return snap.docs.reduce((sum,d)=>sum+(Number(d.data().importo)||0),0)
+}async function report(){
+  if(!currentUser)return;
+  monthlySummary.textContent='Calcolo...';
+  loading(monthlyBtn,true,'Calcolo');
+  try{
+    let n=new Date(),a=new Date(n.getFullYear(),n.getMonth(),1),b=new Date(n.getFullYear(),n.getMonth()+1,1),p=new Date(n.getFullYear(),n.getMonth()-1,1);
+    let [cur,prev]=await Promise.all([totalRange('exits',currentUser.userId,a,b),totalRange('exits',currentUser.userId,p,a)]);
+    monthlySummary.textContent=summary(prev,cur);
+    drawChart([p.toLocaleDateString('it-IT',{
+      month:'short',year:'numeric'
+    }),a.toLocaleDateString('it-IT',{
+      month:'short',year:'numeric'
+    })],[prev,cur])
+  }catch(e){
+    console.error(e);
+    monthlySummary.textContent='Report non disponibile: verifica regole e indici'
+  }finally{
+    loading(monthlyBtn,false)
+  }
+}function summary(p,c){
+  if(!p&&!c)return'Nessuna spesa nei due mesi';
+  if(!p)return`Mese precedente senza spese; questo mese: ${money(c)}.`;
+  let pct=(c-p)/p*100;
+  return pct>0?`Spesa aumentata del ${pct.toFixed(1)}% (${money(p)} → ${money(c)}).`:pct<0?`Spesa diminuita del ${Math.abs(pct).toFixed(1)}% (${money(p)} → ${money(c)}).`:`Spesa invariata: ${money(c)}.`
+}function drawChart(labels,values){
+  if(!window.Chart||!monthlyCanvas)return;
+  if(monthlyChart)monthlyChart.destroy();
+  monthlyChart=new Chart(monthlyCanvas,{
+    type:'bar',data:{
+      labels,datasets:[{
+        label:'Uscite',data:values,backgroundColor:['#7c9cff','#3ac786'],borderRadius:8
+      }]
+    },options:{
+      responsive:true,maintainAspectRatio:false,plugins:{
+        legend:{
+          display:false
+        },tooltip:{
+          callbacks:{
+            label:c=>money(c.parsed.y)
+          }
+        }
+      },scales:{
+        y:{
+          beginAtZero:true,ticks:{
+            callback:v=>money(v)
+          }
+        }
+      }
+    }
+  })
+}monthlyBtn.addEventListener('click',report);
+autoToggle.addEventListener('click',()=>{
+  autoReportEnabled=!autoReportEnabled;
+  autoToggle.textContent=`Auto: ${autoReportEnabled?'ON':'OFF'}`;
+  autoToggle.setAttribute('aria-pressed',String(autoReportEnabled));
+  autoReportEnabled?scheduleReport():clearTimeout(monthlyTimer)
+});
+function scheduleReport(){
+  clearTimeout(monthlyTimer);
+  if(!autoReportEnabled||!currentUser)return;
+  let n=new Date(),next=new Date(n.getFullYear(),n.getMonth()+1,1,0,0,10);
+  monthlyTimer=setTimeout(async()=>{
+    await report();
+    scheduleReport()
+  },Math.max(1000,next-n))
+}
 /* CASA: bilancio condiviso realtime */
 const casaList=$('#casa-list'),casaEntries=$('#casa-entries'),casaExits=$('#casa-exits'),casaBalance=$('#casa-balance'),casaTotalEntries=$('#casa-total-entries'),casaTotalExits=$('#casa-total-exits');
-function subscribePersonalRealtime(){if(personalEntryUnsub)personalEntryUnsub();if(personalExitUnsub)personalExitUnsub();if(!currentUser)return;
- personalEntryUnsub=onSnapshot(query(collection(db,'entries'),where('userId','==',currentUser.userId)),()=>loadLogs(),e=>console.error(e));
- personalExitUnsub=onSnapshot(query(collection(db,'exits'),where('userId','==',currentUser.userId)),()=>loadLogs(),e=>console.error(e));}
-function subscribeCasa(){if(!currentUser||!casaList)return;if(casaUnsub)casaUnsub();casaUnsub=onSnapshot(query(collection(db,'casaMovimenti'),orderBy('createdAt','desc')),snap=>renderCasa(snap),e=>err('Errore aggiornamento CASA',e));}
-function renderCasa(snap){let records=[],entries=0,exits=0; snap.forEach(d=>{let x=d.data();records.push({id:d.id,...x});if(x.tipo==='entrata')entries+=Number(x.importo)||0;else exits+=Number(x.importo)||0;});
- casaEntries.textContent=money(entries);casaExits.textContent=money(exits);casaBalance.textContent=money(entries-exits);if(casaTotalEntries)casaTotalEntries.textContent=money(entries);if(casaTotalExits)casaTotalExits.textContent=money(exits);
- let f=document.createDocumentFragment();records.forEach(x=>{let li=document.createElement('li');li.className='casa-row';let info=document.createElement('div');info.className='casa-info';let title=document.createElement('strong');title.textContent=x.motivo|| (x.tipo==='entrata'?'Entrata':'Uscita');let meta=document.createElement('small');meta.textContent=`${x.tipo==='entrata'?'Entrata':'Uscita'} • ${x.userName||'Utente'} • ${dateOf(x.createdAt)?.toLocaleString('it-IT')||'—'}`;info.append(title,meta);let amount=document.createElement('strong');amount.textContent=(x.tipo==='entrata'?'+':'−')+money(x.importo);amount.className=x.tipo==='entrata'?'casa-positive':'casa-negative';let del=document.createElement('button');del.className='danger casa-delete';del.textContent='Elimina';del.addEventListener('click',async()=>{if(!confirm('Eliminare questo movimento condiviso CASA?'))return;try{await deleteDoc(doc(db,'casaMovimenti',x.id));toast('Movimento CASA eliminato')}catch(e){err('Eliminazione non riuscita',e)}});li.append(info,amount,del);f.append(li)});casaList.replaceChildren(f);window.casaRecords=records;}
-async function addCasa(tipo){let input=tipo==='entrata'?$('#casa-entrata-importo'):$('#casa-uscita-importo'),motivo=tipo==='entrata'?$('#casa-entrata-motivo'):$('#casa-uscita-motivo'),btn=tipo==='entrata'?$('#casa-add-entrata'):$('#casa-add-uscita');let amount=Number(input.value),desc=motivo.value.trim();if(!Number.isFinite(amount)||amount<=0||amount>99999999)return toast('Importo CASA non valido');loading(btn,true,'Salvataggio');try{await addDoc(collection(db,'casaMovimenti'),{tipo,importo:amount,motivo:desc|| (tipo==='entrata'?'Entrata CASA':'Uscita CASA'),userId:currentUser.userId,userName:`${currentUser.nome} ${currentUser.cognome}`,createdAt:serverTimestamp()});input.value='';motivo.value='';toast('Movimento CASA aggiunto')}catch(e){err('Salvataggio CASA fallito',e)}finally{loading(btn,false)}}
-$('#casa-add-entrata').addEventListener('click',()=>addCasa('entrata'));$('#casa-add-uscita').addEventListener('click',()=>addCasa('uscita'));
-$('#casa-export').addEventListener('click',()=>{let rows=window.casaRecords||[];if(!rows.length)return toast('Nessun movimento CASA');let csv='Tipo;Importo;Motivo;Utente;Data\\n'+rows.map(x=>`${x.tipo};${String(x.importo).replace('.',',')};${(x.motivo||'').replaceAll(';',',')};${x.userName||''};${dateOf(x.createdAt)?.toLocaleString('it-IT')||''}`).join('\\n');let blob=new Blob(['\\ufeff'+csv],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='bilancio-casa.csv';a.click();URL.revokeObjectURL(url)});
+function subscribePersonalRealtime(){
+  if(personalEntryUnsub)personalEntryUnsub();
+  if(personalExitUnsub)personalExitUnsub();
+  if(!currentUser)return;
+  personalEntryUnsub=onSnapshot(query(collection(db,'entries'),where('userId','==',currentUser.userId)),()=>loadLogs(),e=>console.error(e));
+  personalExitUnsub=onSnapshot(query(collection(db,'exits'),where('userId','==',currentUser.userId)),()=>loadLogs(),e=>console.error(e));
+}
+function subscribeCasa(){
+  if(!currentUser||!casaList)return;
+  if(casaUnsub)casaUnsub();
+  casaUnsub=onSnapshot(query(collection(db,'casaMovimenti'),orderBy('createdAt','desc')),snap=>renderCasa(snap),e=>err('Errore aggiornamento CASA',e));
+}
+function renderCasa(snap){
+  let records=[],entries=0,exits=0;
+  snap.forEach(d=>{
+    let x=d.data();
+    records.push({
+      id:d.id,...x
+    });
+    if(x.tipo==='entrata')entries+=Number(x.importo)||0;
+    else exits+=Number(x.importo)||0;
+  });
+  casaEntries.textContent=money(entries);
+  casaExits.textContent=money(exits);
+  casaBalance.textContent=money(entries-exits);
+  if(casaTotalEntries)casaTotalEntries.textContent=money(entries);
+  if(casaTotalExits)casaTotalExits.textContent=money(exits);
+  let f=document.createDocumentFragment();
+  records.forEach(x=>{
+    let li=document.createElement('li');
+    li.className='casa-row';
+    let info=document.createElement('div');
+    info.className='casa-info';
+    let title=document.createElement('strong');
+    title.textContent=x.motivo|| (x.tipo==='entrata'?'Entrata':'Uscita');
+    let meta=document.createElement('small');
+    meta.textContent=`${x.tipo==='entrata'?'Entrata':'Uscita'} • ${x.userName||'Utente'} • ${dateOf(x.createdAt)?.toLocaleString('it-IT')||'—'}`;
+    info.append(title,meta);
+    let amount=document.createElement('strong');
+    amount.textContent=(x.tipo==='entrata'?'+':'−')+money(x.importo);
+    amount.className=x.tipo==='entrata'?'casa-positive':'casa-negative';
+    let del=document.createElement('button');
+    del.className='danger casa-delete';
+    del.textContent='Elimina';
+    del.addEventListener('click',async()=>{
+      if(!confirm('Eliminare questo movimento condiviso CASA?'))return;
+      try{
+        await deleteDoc(doc(db,'casaMovimenti',x.id));
+        toast('Movimento CASA eliminato')
+      }catch(e){
+        err('Eliminazione non riuscita',e)
+      }
+    });
+    li.append(info,amount,del);
+    f.append(li)
+  });
+  casaList.replaceChildren(f);
+  window.casaRecords=records;
+}
+async function addCasa(tipo){
+  let input=tipo==='entrata'?$('#casa-entrata-importo'):$('#casa-uscita-importo'),motivo=tipo==='entrata'?$('#casa-entrata-motivo'):$('#casa-uscita-motivo'),btn=tipo==='entrata'?$('#casa-add-entrata'):$('#casa-add-uscita');
+  let amount=Number(input.value),desc=motivo.value.trim();
+  if(!Number.isFinite(amount)||amount<=0||amount>99999999)return toast('Importo CASA non valido');
+  loading(btn,true,'Salvataggio');
+  try{
+    await addDoc(collection(db,'casaMovimenti'),{
+      tipo,importo:amount,motivo:desc|| (tipo==='entrata'?'Entrata CASA':'Uscita CASA'),userId:currentUser.userId,userName:`${currentUser.nome} ${currentUser.cognome}`,createdAt:serverTimestamp()
+    });
+    input.value='';
+    motivo.value='';
+    toast('Movimento CASA aggiunto')
+  }catch(e){
+    err('Salvataggio CASA fallito',e)
+  }finally{
+    loading(btn,false)
+  }
+}
+$('#casa-add-entrata').addEventListener('click',()=>addCasa('entrata'));
+$('#casa-add-uscita').addEventListener('click',()=>addCasa('uscita'));
+$('#casa-export').addEventListener('click',()=>{
+  let rows=window.casaRecords||[];
+  if(!rows.length)return toast('Nessun movimento CASA');
+  let csv='Tipo;Importo;Motivo;Utente;Data\\\n'+rows.map(x=>`${x.tipo};${String(x.importo).replace('.',',')};${(x.motivo||'').replaceAll(';',',')};${x.userName||''};${dateOf(x.createdAt)?.toLocaleString('it-IT')||''}`).join('\\\n');
+  let blob=new Blob(['\\\ufeff'+csv],{
+    type:'text/csv;charset=utf-8'
+  }),url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;
+  a.download='bilancio-casa.csv';
+  a.click();
+  URL.revokeObjectURL(url)
+});
 /* Monopoly private rooms */
-const roomHome=$('#monopoly-home'),roomView=$('#room-view'),roomName=$('#room-name'),roomCash=$('#room-start-money'),createRoomBtn=$('#create-room'),roomsList=$('#rooms-list');createRoomBtn.addEventListener('click',async()=>{let title=roomName.value.trim()||'Partita privata',cash=Number(roomCash.value);if(!Number.isFinite(cash)||cash<1||cash>10000000)return toast('Saldo iniziale non valido');loading(createRoomBtn,true,'Creazione');try{let room=await addDoc(collection(db,'monopolyRooms'),{name:title,ownerId:currentUser.userId,ownerName:`${currentUser.nome} ${currentUser.cognome}`,status:'lobby',startingBalance:cash,players:{[currentUser.userId]:{userId:currentUser.userId,name:`${currentUser.nome} ${currentUser.cognome}`,photoURL:null,balance:cash,accepted:true,active:false}},createdAt:serverTimestamp(),updatedAt:serverTimestamp()});activeRoomId=room.id;await openRoom(room.id)}catch(e){err('Creazione stanza fallita',e)}finally{loading(createRoomBtn,false)}});
-async function refreshRooms(){if(!currentUser)return;try{let q=query(collection(db,'monopolyRooms'),where('status','in',['lobby','active'])),s=await getDocs(q);let frag=document.createDocumentFragment();s.forEach(d=>{let r=d.data(),p=r.players||{};if(p[currentUser.userId]||Object.values(p).some(x=>x.invitedTo===currentUser.userId)){let li=document.createElement('li');li.textContent=`${r.name} — ${r.status==='active'?'In corso':'Lobby'} — ${d.id.slice(0,6)}`;let b=document.createElement('button');b.textContent=p[currentUser.userId]?'Apri':'Accetta invito';b.className='secondary';b.addEventListener('click',()=>joinRoom(d.id,r));li.append(' ',b);frag.append(li)}});roomsList.replaceChildren(frag)}catch(e){console.error(e)}}
-async function joinRoom(id,r){try{await runTransaction(db,async tx=>{let ref=doc(db,'monopolyRooms',id),snap=await tx.get(ref);if(!snap.exists())throw Error('Stanza non trovata');let data=snap.data();if(data.status==='finished')throw Error('Partita conclusa');let players={...(data.players||{})};if(!players[currentUser.userId])throw Error('Non sei invitato');let entry=players[currentUser.userId];if(entry.invitedTo){entry={userId:currentUser.userId,name:entry.name||`${currentUser.nome} ${currentUser.cognome}`,balance:data.startingBalance,accepted:true,active:false};players[currentUser.userId]=entry;}else entry.accepted=true;tx.update(ref,{players,updatedAt:serverTimestamp()})});await openRoom(id)}catch(e){err(e.message||'Impossibile entrare',e)}}
-async function openRoom(id){activeRoomId=id;roomHome.classList.add('hidden');roomView.classList.remove('hidden');if(roomUnsub)roomUnsub();roomUnsub=onSnapshot(doc(db,'monopolyRooms',id),snap=>{if(!snap.exists()){toast('Stanza rimossa');leaveRoom();return}roomCache={id,...snap.data()};renderRoom(roomCache)},e=>err('Aggiornamento stanza non riuscito',e));roomPing(true);clearInterval(roomPresenceTimer);roomPresenceTimer=setInterval(()=>roomPing(true),20000);switchView('monopoly')}
-function renderRoom(r){$('#room-title').textContent=r.name;$('#room-code').textContent=`Codice: ${r.id}`;$('#room-state').textContent=r.status==='lobby'?'Lobby — invita giocatori e avvia quando pronti.':r.status==='active'?'Partita in corso':'Partita terminata';let list=$('#room-players'),frag=document.createDocumentFragment();Object.values(r.players||{}).forEach(p=>{if(p.invitedTo) return;let li=document.createElement('li');li.className='room-player';let n=document.createElement('span');n.textContent=p.name+(p.userId===r.ownerId?' (host)':'');let bal=document.createElement('span');bal.className='money';bal.textContent=money(p.balance);li.append(n,bal);frag.append(li)});list.replaceChildren(frag);let lobby=r.status==='lobby',active=r.status==='active';$('#room-invite-controls').classList.toggle('hidden',!lobby||r.ownerId!==currentUser.userId);$('#transfer-controls').classList.toggle('hidden',!active);$('#finish-game').classList.toggle('hidden',!active||r.ownerId!==currentUser.userId);$('#start-game').disabled=Object.values(r.players||{}).filter(p=>!p.invitedTo).length<2;populateRoomSelects();if(roomTxUnsub)roomTxUnsub();roomTxUnsub=onSnapshot(query(collection(db,'monopolyRooms',r.id,'transactions'),orderBy('createdAt','desc')),s=>{let f=document.createDocumentFragment();s.forEach(d=>{let x=d.data(),li=document.createElement('li');li.textContent=`${x.fromName} → ${x.toName}: ${money(x.amount)}${x.reason?` (${x.reason})`:''}`;f.append(li)});$('#room-transactions').replaceChildren(f)})}
-function populateRoomSelects(){let invite=$('#invite-user'),transfer=$('#transfer-to');if(!invite||!transfer)return;let r=roomCache,players=r?.players||{};invite.replaceChildren();transfer.replaceChildren();usersCache.filter(u=>u.userId!==currentUser?.userId).forEach(u=>{let opt=document.createElement('option');opt.value=u.userId;opt.textContent=`${u.nome} ${u.cognome}${online(u)?' • online':' • offline'}`;invite.append(opt);if(r&&r.status==='active'&&players[u.userId]&&!players[u.userId].invitedTo){let o=opt.cloneNode(true);transfer.append(o)}})}
-$('#invite-btn').addEventListener('click',async()=>{if(!roomCache||roomCache.ownerId!==currentUser.userId)return;let target=$('#invite-user').value;if(!target)return;let u=usersCache.find(x=>x.userId===target);if(!u)return;try{await runTransaction(db,async tx=>{let ref=doc(db,'monopolyRooms',activeRoomId),s=await tx.get(ref);if(!s.exists()||s.data().status!=='lobby')throw Error('Lobby non più disponibile');let players={...s.data().players};if(players[target])throw Error('Giocatore già inserito/invitato');players[target]={userId:target,name:`${u.nome} ${u.cognome}`,invitedTo:target,accepted:false};tx.update(ref,{players,updatedAt:serverTimestamp()})});toast('Invito inserito')}catch(e){err(e.message,e)}});
-$('#start-game').addEventListener('click',async()=>{if(!roomCache||roomCache.ownerId!==currentUser.userId)return;try{await runTransaction(db,async tx=>{let ref=doc(db,'monopolyRooms',activeRoomId),s=await tx.get(ref);if(!s.exists())throw Error('Stanza inesistente');let r=s.data();if(r.status!=='lobby')throw Error('Partita già avviata');let players={...r.players};for(let [id,p] of Object.entries(players)){if(p.invitedTo&&!p.accepted)delete players[id];else if(!p.invitedTo){p.active=true}}if(Object.values(players).filter(p=>!p.invitedTo).length<2)throw Error('Servono almeno due giocatori che hanno accettato');tx.update(ref,{players,status:'active',startedAt:serverTimestamp(),updatedAt:serverTimestamp()})});toast('Partita avviata')}catch(e){err(e.message,e)}});
-$('#transfer-btn').addEventListener('click',async()=>{let to=$('#transfer-to').value,amount=Number($('#transfer-amount').value),reason=$('#transfer-reason').value.trim();if(!to||to===currentUser.userId||!Number.isFinite(amount)||amount<=0)return toast('Controlla destinatario e importo');if(amount>100000000)return toast('Importo troppo elevato');loading($('#transfer-btn'),true,'Trasferimento');try{let roomRef=doc(db,'monopolyRooms',activeRoomId),txRef=doc(collection(db,'monopolyRooms',activeRoomId,'transactions'));await runTransaction(db,async t=>{let snap=await t.get(roomRef);if(!snap.exists())throw Error('Stanza inesistente');let r=snap.data(),players={...r.players};if(r.status!=='active')throw Error('La partita non è attiva');let from=players[currentUser.userId],dest=players[to];if(!from||!dest||from.invitedTo||dest.invitedTo)throw Error('Giocatore non presente');if(Number(from.balance)<amount)throw Error('Saldo insufficiente');from.balance=Math.round((Number(from.balance)-amount)*100)/100;dest.balance=Math.round((Number(dest.balance)+amount)*100)/100;t.update(roomRef,{players,updatedAt:serverTimestamp()});t.set(txRef,{fromId:currentUser.userId,fromName:from.name,toId:to,toName:dest.name,amount,reason,createdAt:serverTimestamp()})});$('#transfer-amount').value='';$('#transfer-reason').value='';toast('Trasferimento completato')}catch(e){err(e.message||'Trasferimento fallito',e)}finally{loading($('#transfer-btn'),false)}});
-$('#finish-game').addEventListener('click',async()=>{if(!confirm('Terminare la partita? I trasferimenti saranno bloccati.'))return;try{await runTransaction(db,async tx=>{let ref=doc(db,'monopolyRooms',activeRoomId),s=await tx.get(ref);if(!s.exists())throw Error('Stanza inesistente');if(s.data().ownerId!==currentUser.userId)throw Error('Solo il creatore può terminare');if(s.data().status!=='active')throw Error('Partita già terminata');tx.update(ref,{status:'finished',finishedAt:serverTimestamp(),updatedAt:serverTimestamp()})});toast('Partita conclusa')}catch(e){err(e.message,e)}});
-async function roomPing(isActive){if(!activeRoomId||!currentUser)return;try{let ref=doc(db,'monopolyRooms',activeRoomId);await updateDoc(ref,{[`presence.${currentUser.userId}`]:isActive?{active:true,lastSeen:serverTimestamp()}:{active:false,lastSeen:serverTimestamp()}})}catch(e){console.debug('Ping room',e)}}function leaveRoom(returnHome=true){clearInterval(roomPresenceTimer);roomPresenceTimer=null;if(activeRoomId)roomPing(false);if(roomUnsub)roomUnsub();if(roomTxUnsub)roomTxUnsub();roomUnsub=roomTxUnsub=null;activeRoomId=null;roomCache=null;roomView.classList.add('hidden');roomHome.classList.remove('hidden');if(returnHome)refreshRooms()}$('#leave-room').addEventListener('click',()=>leaveRoom());
-window.addEventListener('pagehide',()=>{stopPresence();clearInterval(logsTimer);clearInterval(roomPresenceTimer);clearTimeout(monthlyTimer);if(activeRoomId)roomPing(false);if(usersUnsub)usersUnsub();if(casaUnsub)casaUnsub();if(personalEntryUnsub)personalEntryUnsub();if(personalExitUnsub)personalExitUnsub()});document.addEventListener('visibilitychange',()=>{if(document.hidden){if(activeRoomId)roomPing(false)}else if(activeRoomId&&document.querySelector('#view-monopoly').classList.contains('active'))roomPing(true)});
+const roomHome=$('#monopoly-home'),roomView=$('#room-view'),roomName=$('#room-name'),roomCash=$('#room-start-money'),createRoomBtn=$('#create-room'),roomsList=$('#rooms-list');
+createRoomBtn.addEventListener('click',async()=>{
+  let title=roomName.value.trim()||'Partita privata',cash=Number(roomCash.value);
+  if(!Number.isFinite(cash)||cash<1||cash>10000000)return toast('Saldo iniziale non valido');
+  loading(createRoomBtn,true,'Creazione');
+  try{
+    let room=await addDoc(collection(db,'monopolyRooms'),{
+      name:title,ownerId:currentUser.userId,ownerName:`${currentUser.nome} ${currentUser.cognome}`,status:'lobby',startingBalance:cash,players:{
+        [currentUser.userId]:{
+          userId:currentUser.userId,name:`${currentUser.nome} ${currentUser.cognome}`,photoURL:null,balance:cash,accepted:true,active:false
+        }
+      },createdAt:serverTimestamp(),updatedAt:serverTimestamp()
+    });
+    activeRoomId=room.id;
+    await openRoom(room.id)
+  }catch(e){
+    err('Creazione stanza fallita',e)
+  }finally{
+    loading(createRoomBtn,false)
+  }
+});
+async function refreshRooms(){
+  if(!currentUser)return;
+  try{
+    let q=query(collection(db,'monopolyRooms'),where('status','in',['lobby','active'])),s=await getDocs(q);
+    let frag=document.createDocumentFragment();
+    s.forEach(d=>{
+      let r=d.data(),p=r.players||{
+      };
+      if(p[currentUser.userId]||Object.values(p).some(x=>x.invitedTo===currentUser.userId)){
+        let li=document.createElement('li');
+        li.textContent=`${r.name} — ${r.status==='active'?'In corso':'Lobby'} — ${d.id.slice(0,6)}`;
+        let b=document.createElement('button');
+        b.textContent=p[currentUser.userId]?'Apri':'Accetta invito';
+        b.className='secondary';
+        b.addEventListener('click',()=>joinRoom(d.id,r));
+        li.append(' ',b);
+        frag.append(li)
+      }
+    });
+    roomsList.replaceChildren(frag)
+  }catch(e){
+    console.error(e)
+  }
+}
+async function joinRoom(id,r){
+  try{
+    await runTransaction(db,async tx=>{
+      let ref=doc(db,'monopolyRooms',id),snap=await tx.get(ref);
+      if(!snap.exists())throw Error('Stanza non trovata');
+      let data=snap.data();
+      if(data.status==='finished')throw Error('Partita conclusa');
+      let players={
+        ...(data.players||{
+        })
+      };
+      if(!players[currentUser.userId])throw Error('Non sei invitato');
+      let entry=players[currentUser.userId];
+      if(entry.invitedTo){
+        entry={
+          userId:currentUser.userId,name:entry.name||`${currentUser.nome} ${currentUser.cognome}`,balance:data.startingBalance,accepted:true,active:false
+        };
+        players[currentUser.userId]=entry;
+      }else entry.accepted=true;
+      tx.update(ref,{
+        players,updatedAt:serverTimestamp()
+      })
+    });
+    await openRoom(id)
+  }catch(e){
+    err(e.message||'Impossibile entrare',e)
+  }
+}
+async function openRoom(id){
+  activeRoomId=id;
+  roomHome.classList.add('hidden');
+  roomView.classList.remove('hidden');
+  if(roomUnsub)roomUnsub();
+  roomUnsub=onSnapshot(doc(db,'monopolyRooms',id),snap=>{
+    if(!snap.exists()){
+      toast('Stanza rimossa');
+      leaveRoom();
+      return
+    }roomCache={
+      id,...snap.data()
+    };
+    renderRoom(roomCache)
+  },e=>err('Aggiornamento stanza non riuscito',e));
+  roomPing(true);
+  clearInterval(roomPresenceTimer);
+  roomPresenceTimer=setInterval(()=>roomPing(true),20000);
+  switchView('monopoly')
+}
+function renderRoom(r){
+  $('#room-title').textContent=r.name;
+  $('#room-code').textContent=`Codice: ${r.id}`;
+  $('#room-state').textContent=r.status==='lobby'?'Lobby — invita giocatori e avvia quando pronti.':r.status==='active'?'Partita in corso':'Partita terminata';
+  let list=$('#room-players'),frag=document.createDocumentFragment();
+  Object.values(r.players||{
+  }).forEach(p=>{
+    if(p.invitedTo) return;
+    let li=document.createElement('li');
+    li.className='room-player';
+    let n=document.createElement('span');
+    n.textContent=p.name+(p.userId===r.ownerId?' (host)':'');
+    let bal=document.createElement('span');
+    bal.className='money';
+    bal.textContent=money(p.balance);
+    li.append(n,bal);
+    frag.append(li)
+  });
+  list.replaceChildren(frag);
+  let lobby=r.status==='lobby',active=r.status==='active';
+  $('#room-invite-controls').classList.toggle('hidden',!lobby||r.ownerId!==currentUser.userId);
+  $('#transfer-controls').classList.toggle('hidden',!active);
+  $('#finish-game').classList.toggle('hidden',!active||r.ownerId!==currentUser.userId);
+  $('#start-game').disabled=Object.values(r.players||{
+  }).filter(p=>!p.invitedTo).length<2;
+  populateRoomSelects();
+  if(roomTxUnsub)roomTxUnsub();
+  roomTxUnsub=onSnapshot(query(collection(db,'monopolyRooms',r.id,'transactions'),orderBy('createdAt','desc')),s=>{
+    let f=document.createDocumentFragment();
+    s.forEach(d=>{
+      let x=d.data(),li=document.createElement('li');
+      li.textContent=`${x.fromName} → ${x.toName}: ${money(x.amount)}${x.reason?` (${
+        x.reason
+      })`:''}`;
+      f.append(li)
+    });
+    $('#room-transactions').replaceChildren(f)
+  })
+}
+function populateRoomSelects(){
+  let invite=$('#invite-user'),transfer=$('#transfer-to');
+  if(!invite||!transfer)return;
+  let r=roomCache,players=r?.players||{
+  };
+  invite.replaceChildren();
+  transfer.replaceChildren();
+  usersCache.filter(u=>u.userId!==currentUser?.userId).forEach(u=>{
+    let opt=document.createElement('option');
+    opt.value=u.userId;
+    opt.textContent=`${u.nome} ${u.cognome}${online(u)?' • online':' • offline'}`;
+    invite.append(opt);
+    if(r&&r.status==='active'&&players[u.userId]&&!players[u.userId].invitedTo){
+      let o=opt.cloneNode(true);
+      transfer.append(o)
+    }
+  })
+}
+$('#invite-btn').addEventListener('click',async()=>{
+  if(!roomCache||roomCache.ownerId!==currentUser.userId)return;
+  let target=$('#invite-user').value;
+  if(!target)return;
+  let u=usersCache.find(x=>x.userId===target);
+  if(!u)return;
+  try{
+    await runTransaction(db,async tx=>{
+      let ref=doc(db,'monopolyRooms',activeRoomId),s=await tx.get(ref);
+      if(!s.exists()||s.data().status!=='lobby')throw Error('Lobby non più disponibile');
+      let players={
+        ...s.data().players
+      };
+      if(players[target])throw Error('Giocatore già inserito/invitato');
+      players[target]={
+        userId:target,name:`${u.nome} ${u.cognome}`,invitedTo:target,accepted:false
+      };
+      tx.update(ref,{
+        players,updatedAt:serverTimestamp()
+      })
+    });
+    toast('Invito inserito')
+  }catch(e){
+    err(e.message,e)
+  }
+});
+$('#start-game').addEventListener('click',async()=>{
+  if(!roomCache||roomCache.ownerId!==currentUser.userId)return;
+  try{
+    await runTransaction(db,async tx=>{
+      let ref=doc(db,'monopolyRooms',activeRoomId),s=await tx.get(ref);
+      if(!s.exists())throw Error('Stanza inesistente');
+      let r=s.data();
+      if(r.status!=='lobby')throw Error('Partita già avviata');
+      let players={
+        ...r.players
+      };
+      for(let [id,p] of Object.entries(players)){
+        if(p.invitedTo&&!p.accepted)delete players[id];
+        else if(!p.invitedTo){
+          p.active=true
+        }
+      }if(Object.values(players).filter(p=>!p.invitedTo).length<2)throw Error('Servono almeno due giocatori che hanno accettato');
+      tx.update(ref,{
+        players,status:'active',startedAt:serverTimestamp(),updatedAt:serverTimestamp()
+      })
+    });
+    toast('Partita avviata')
+  }catch(e){
+    err(e.message,e)
+  }
+});
+$('#transfer-btn').addEventListener('click',async()=>{
+  let to=$('#transfer-to').value,amount=Number($('#transfer-amount').value),reason=$('#transfer-reason').value.trim();
+  if(!to||to===currentUser.userId||!Number.isFinite(amount)||amount<=0)return toast('Controlla destinatario e importo');
+  if(amount>100000000)return toast('Importo troppo elevato');
+  loading($('#transfer-btn'),true,'Trasferimento');
+  try{
+    let roomRef=doc(db,'monopolyRooms',activeRoomId),txRef=doc(collection(db,'monopolyRooms',activeRoomId,'transactions'));
+    await runTransaction(db,async t=>{
+      let snap=await t.get(roomRef);
+      if(!snap.exists())throw Error('Stanza inesistente');
+      let r=snap.data(),players={
+        ...r.players
+      };
+      if(r.status!=='active')throw Error('La partita non è attiva');
+      let from=players[currentUser.userId],dest=players[to];
+      if(!from||!dest||from.invitedTo||dest.invitedTo)throw Error('Giocatore non presente');
+      if(Number(from.balance)<amount)throw Error('Saldo insufficiente');
+      from.balance=Math.round((Number(from.balance)-amount)*100)/100;
+      dest.balance=Math.round((Number(dest.balance)+amount)*100)/100;
+      t.update(roomRef,{
+        players,updatedAt:serverTimestamp()
+      });
+      t.set(txRef,{
+        fromId:currentUser.userId,fromName:from.name,toId:to,toName:dest.name,amount,reason,createdAt:serverTimestamp()
+      })
+    });
+    $('#transfer-amount').value='';
+    $('#transfer-reason').value='';
+    toast('Trasferimento completato')
+  }catch(e){
+    err(e.message||'Trasferimento fallito',e)
+  }finally{
+    loading($('#transfer-btn'),false)
+  }
+});
+$('#finish-game').addEventListener('click',async()=>{
+  if(!confirm('Terminare la partita? I trasferimenti saranno bloccati.'))return;
+  try{
+    await runTransaction(db,async tx=>{
+      let ref=doc(db,'monopolyRooms',activeRoomId),s=await tx.get(ref);
+      if(!s.exists())throw Error('Stanza inesistente');
+      if(s.data().ownerId!==currentUser.userId)throw Error('Solo il creatore può terminare');
+      if(s.data().status!=='active')throw Error('Partita già terminata');
+      tx.update(ref,{
+        status:'finished',finishedAt:serverTimestamp(),updatedAt:serverTimestamp()
+      })
+    });
+    toast('Partita conclusa')
+  }catch(e){
+    err(e.message,e)
+  }
+});
+async function roomPing(isActive){
+  if(!activeRoomId||!currentUser)return;
+  try{
+    let ref=doc(db,'monopolyRooms',activeRoomId);
+    await updateDoc(ref,{
+      [`presence.${currentUser.userId}`]:isActive?{
+        active:true,lastSeen:serverTimestamp()
+      }:{
+        active:false,lastSeen:serverTimestamp()
+      }
+    })
+  }catch(e){
+    console.debug('Ping room',e)
+  }
+}function leaveRoom(returnHome=true){
+  clearInterval(roomPresenceTimer);
+  roomPresenceTimer=null;
+  if(activeRoomId)roomPing(false);
+  if(roomUnsub)roomUnsub();
+  if(roomTxUnsub)roomTxUnsub();
+  roomUnsub=roomTxUnsub=null;
+  activeRoomId=null;
+  roomCache=null;
+  roomView.classList.add('hidden');
+  roomHome.classList.remove('hidden');
+  if(returnHome)refreshRooms()
+}$('#leave-room').addEventListener('click',()=>leaveRoom());
+window.addEventListener('pagehide',()=>{
+  stopPresence();
+  clearInterval(logsTimer);
+  clearInterval(roomPresenceTimer);
+  clearTimeout(monthlyTimer);
+  if(activeRoomId)roomPing(false);
+  if(usersUnsub)usersUnsub();
+  if(casaUnsub)casaUnsub();
+  if(personalEntryUnsub)personalEntryUnsub();
+  if(personalExitUnsub)personalExitUnsub()
+});
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){
+    if(activeRoomId)roomPing(false)
+  }else if(activeRoomId&&document.querySelector('#view-monopoly').classList.contains('active'))roomPing(true)
+});
 restore();
