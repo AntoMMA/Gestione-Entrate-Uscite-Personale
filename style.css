@@ -1,1 +1,525 @@
-:root{color-scheme:dark;--bg:#0b1120;--surface:#111c2e;--surface2:#16243a;--text:#edf2fa;--muted:#9bacbf;--border:#26354c;--accent:#7c9cff;--green:#3ac786;--red:#ff6477}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}button,input,select{font:inherit}button{border:0;border-radius:12px;padding:12px 15px;cursor:pointer;font-weight:650;color:var(--text);background:var(--surface2)}button:disabled{opacity:.55;cursor:wait}button.primary{background:var(--accent);color:#0a1220}button.danger{background:#7d2635;color:#fff}button.secondary{background:#25354b}button.ghost{background:transparent;border:1px solid var(--border)}label{display:block;margin:12px 0;color:var(--muted);font-size:.92rem}input,select{display:block;width:100%;margin-top:6px;background:#0d1728;color:var(--text);border:1px solid var(--border);border-radius:10px;padding:12px;outline:none}input:focus,select:focus{border-color:var(--accent)}h1{font-size:1.55rem;margin:10px 0 18px}h2{font-size:1.18rem}h3{font-size:1rem}.hidden{display:none!important}.muted{color:var(--muted)}.panel{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:18px;margin-bottom:16px}.login-wrap{min-height:100dvh;display:grid;place-items:center;padding:20px}.login{width:min(460px,100%)}.brand{font-weight:800;font-size:1.1rem;display:flex;gap:8px;align-items:center}.topbar{display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-bottom:1px solid var(--border);background:#0c1525;position:sticky;top:0;z-index:5}.nav{display:flex;gap:8px;padding:10px 14px;overflow-x:auto;background:#0c1525}.navbtn{white-space:nowrap;background:transparent;border:1px solid var(--border);padding:10px 14px}.navbtn.active{background:var(--accent);color:#0b1220}.layout{display:grid;grid-template-columns:250px minmax(0,1fr);gap:18px;padding:18px;max-width:1500px;margin:auto}.sidebar{align-self:start;position:sticky;top:116px}.users-list,.logs{list-style:none;margin:0;padding:0}.users-list li{display:flex;align-items:center;gap:10px;padding:10px;border-bottom:1px solid var(--border);cursor:pointer}.users-list li:hover{background:var(--surface2)}.user-meta{min-width:0}.user-name{font-weight:650}.user-status{display:flex;align-items:center;gap:6px;font-size:.8rem;color:var(--muted)}.status-dot{width:9px;height:9px;border-radius:50%;display:inline-block}.status-online{background:var(--green)}.status-offline{background:var(--red)}.avatar{width:54px;height:54px;display:grid;place-items:center;border-radius:50%;background:var(--surface2);font-weight:800;overflow:hidden}.avatar img,.user-avatar img{width:100%;height:100%;object-fit:cover}.user-avatar{width:40px;height:40px;flex:none;border-radius:50%;background:var(--surface2);display:grid;place-items:center;overflow:hidden}.view{display:none}.view.active{display:block}.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:18px 0}.stat{background:var(--surface2);padding:20px;border-radius:16px;border:1px solid var(--border)}.stat span{display:block;color:var(--muted)}.stat strong{font-size:1.35rem}.two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.logs li{padding:10px 4px;border-bottom:1px solid var(--border);overflow-wrap:anywhere}.profile-inline{display:flex;align-items:center;gap:12px;margin-bottom:18px}.chart-wrap{height:280px;margin-top:20px}.room-head{display:flex;justify-content:space-between;align-items:center;gap:10px}.upload-label{display:inline-block;background:var(--surface2);padding:10px 14px;border-radius:12px;cursor:pointer;color:var(--text)}.upload-label input{display:none}.room-player{display:flex;justify-content:space-between;align-items:center;gap:12px}.room-player .money{font-weight:750}.invite-chip{font-size:.8rem;color:var(--muted)}.casa-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.casa-info{display:flex;flex-direction:column;flex:1;min-width:140px}.casa-info small{color:var(--muted)}.casa-positive{color:var(--green)}.casa-negative{color:var(--red)}.casa-delete{font-size:.82rem;padding:8px 10px}#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#25354b;padding:12px 18px;border-radius:12px;box-shadow:0 8px 30px #0005;z-index:20;display:none;max-width:90vw}#toast.show{display:block}.room-code{font-family:monospace}@media(max-width:850px){.layout{grid-template-columns:1fr;padding:12px}.sidebar{position:static}.sidebar h3{margin-top:0}.cards{grid-template-columns:1fr}.two{grid-template-columns:1fr}.topbar{padding:12px}.nav{padding:8px}.main-content{min-width:0}.panel{padding:15px}.chart-wrap{height:240px}}@media(max-width:520px){button{padding:11px 12px}.room-head{align-items:flex-start;flex-direction:column}.login-wrap{padding:12px}.navbtn{padding:9px 12px}}\n.remember-label{display:flex;align-items:center;gap:10px;cursor:pointer;color:var(--text);margin:10px 0 18px}.remember-label input{width:auto;margin:0;accent-color:var(--accent);transform:scale(1.1)}.remember-label span{font-size:.92rem}\n
+/* =========================================================
+   GESTIONALE ENTRATE / USCITE — STILE PRINCIPALE
+   ========================================================= */
+
+/* 1. Variabili e impostazioni globali */
+:root {
+  color-scheme: dark;
+  --bg: #0b1120;
+  --surface: #111c2e;
+  --surface2: #16243a;
+  --text: #edf2fa;
+  --muted: #9bacbf;
+  --border: #26354c;
+  --accent: #7c9cff;
+  --green: #3ac786;
+  --red: #ff6477;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+/* 2. Pulsanti */
+button {
+  border: 0;
+  border-radius: 12px;
+  padding: 12px 15px;
+  cursor: pointer;
+  font-weight: 650;
+  color: var(--text);
+  background: var(--surface2);
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+button.primary {
+  background: var(--accent);
+  color: #0a1220;
+}
+
+/* Pulsante Aggiungi entrata: verde leggermente scuro */
+#add-entrata {
+  background-color: #2e8b57;
+  color: #ffffff;
+  border: none;
+}
+
+#add-entrata:hover {
+  background-color: #267349;
+}
+
+#add-entrata:active {
+  background-color: #1f603d;
+}
+
+button.danger {
+  background: #7d2635;
+  color: #fff;
+}
+
+button.secondary {
+  background: #25354b;
+}
+
+button.ghost {
+  background: transparent;
+  border: 1px solid var(--border);
+}
+
+/* 3. Etichette, campi e input */
+label {
+  display: block;
+  margin: 12px 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+input,
+select {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  background: #0d1728;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  outline: none;
+}
+
+input:focus,
+select:focus {
+  border-color: var(--accent);
+}
+
+/* 4. Titoli e utility */
+h1 {
+  font-size: 1.55rem;
+  margin: 10px 0 18px;
+}
+
+h2 {
+  font-size: 1.18rem;
+}
+
+h3 {
+  font-size: 1rem;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+/* 5. Pannelli e schermata di accesso */
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 18px;
+  margin-bottom: 16px;
+}
+
+.login-wrap {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+
+.login {
+  width: min(460px, 100%);
+}
+
+.brand {
+  font-weight: 800;
+  font-size: 1.1rem;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* 6. Barra superiore e navigazione */
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  background: #0c1525;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+
+.nav {
+  display: flex;
+  gap: 8px;
+  padding: 10px 14px;
+  overflow-x: auto;
+  background: #0c1525;
+}
+
+.navbtn {
+  white-space: nowrap;
+  background: transparent;
+  border: 1px solid var(--border);
+  padding: 10px 14px;
+}
+
+.navbtn.active {
+  background: var(--accent);
+  color: #0b1220;
+}
+
+/* 7. Layout principale e sidebar */
+.layout {
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr);
+  gap: 18px;
+  padding: 18px;
+  max-width: 1500px;
+  margin: auto;
+}
+
+.sidebar {
+  align-self: start;
+  position: sticky;
+  top: 116px;
+}
+
+/* 8. Liste utenti e stato online */
+.users-list,
+.logs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.users-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.users-list li:hover {
+  background: var(--surface2);
+}
+
+.user-meta {
+  min-width: 0;
+}
+
+.user-name {
+  font-weight: 650;
+}
+
+.user-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.status-online {
+  background: var(--green);
+}
+
+.status-offline {
+  background: var(--red);
+}
+
+/* 9. Avatar */
+.avatar {
+  width: 54px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--surface2);
+  font-weight: 800;
+  overflow: hidden;
+}
+
+.avatar img,
+.user-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.user-avatar {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--surface2);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+/* 10. Viste e dashboard */
+.view {
+  display: none;
+}
+
+.view.active {
+  display: block;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin: 18px 0;
+}
+
+.stat {
+  background: var(--surface2);
+  padding: 20px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+}
+
+.stat span {
+  display: block;
+  color: var(--muted);
+}
+
+.stat strong {
+  font-size: 1.35rem;
+}
+
+.two {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.logs li {
+  padding: 10px 4px;
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+
+/* 11. Profilo */
+.profile-inline {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.upload-label {
+  display: inline-block;
+  background: var(--surface2);
+  padding: 10px 14px;
+  border-radius: 12px;
+  cursor: pointer;
+  color: var(--text);
+}
+
+.upload-label input {
+  display: none;
+}
+
+/* 12. Report e grafici */
+.chart-wrap {
+  height: 280px;
+  margin-top: 20px;
+}
+
+/* 13. Monopoly */
+.room-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.room-player {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.room-player .money {
+  font-weight: 750;
+}
+
+.invite-chip {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.room-code {
+  font-family: monospace;
+}
+
+/* 14. Bilancio CASA */
+.casa-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.casa-info {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 140px;
+}
+
+.casa-info small {
+  color: var(--muted);
+}
+
+.casa-positive {
+  color: var(--green);
+}
+
+.casa-negative {
+  color: var(--red);
+}
+
+.casa-delete {
+  font-size: 0.82rem;
+  padding: 8px 10px;
+}
+
+/* 15. Toast / notifiche */
+#toast {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #25354b;
+  padding: 12px 18px;
+  border-radius: 12px;
+  box-shadow: 0 8px 30px #0005;
+  z-index: 20;
+  display: none;
+  max-width: 90vw;
+}
+
+#toast.show {
+  display: block;
+}
+
+/* 16. Checkbox "Ricordami" */
+.remember-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  color: var(--text);
+  margin: 10px 0 18px;
+}
+
+.remember-label input {
+  width: auto;
+  margin: 0;
+  accent-color: var(--accent);
+  transform: scale(1.1);
+}
+
+.remember-label span {
+  font-size: 0.92rem;
+}
+
+/* 17. Responsive: tablet e smartphone */
+@media (max-width: 850px) {
+  .layout {
+    grid-template-columns: 1fr;
+    padding: 12px;
+  }
+
+  .sidebar {
+    position: static;
+  }
+
+  .sidebar h3 {
+    margin-top: 0;
+  }
+
+  .cards {
+    grid-template-columns: 1fr;
+  }
+
+  .two {
+    grid-template-columns: 1fr;
+  }
+
+  .topbar {
+    padding: 12px;
+  }
+
+  .nav {
+    padding: 8px;
+  }
+
+  .main-content {
+    min-width: 0;
+  }
+
+  .panel {
+    padding: 15px;
+  }
+
+  .chart-wrap {
+    height: 240px;
+  }
+}
+
+@media (max-width: 520px) {
+  button {
+    padding: 11px 12px;
+  }
+
+  .room-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .login-wrap {
+    padding: 12px;
+  }
+
+  .navbtn {
+    padding: 9px 12px;
+  }
+}
